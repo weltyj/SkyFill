@@ -56,7 +56,7 @@ int fill_top_of_sky=0 ;  // by default, don't make start of the sky values equal
 float final_saturation_factor=1.0 ;
 
 // global arrays, will indicate what was detected for each column (x) for these values
-int16 *start_of_sky, *end_of_sky, *final_end_of_sky, *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
+int16_t *start_of_sky, *end_of_sky, *final_end_of_sky, *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
 
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
 #define MAX(a,b) ( (a) > (b) ? (a) : (b) )
@@ -69,11 +69,9 @@ int estimate_only=0 ;
 int show_raw_prediction=0 ;
 int CIE_sky_index=-1 ; // if 3, will only use CIE coefs to predict given CIE index grid search
 
-int fix_sky_hue =0 ;  // set all found sky hue pixels to the sky_hue_want ;
+int fix_sky_hue =0 ;  // try to repair blown out sky areas
 int min_sky_hue_mask = 0 ;
 int max_sky_hue_mask = -1 ;
-float sky_hue_want = 212. ;
-float sky_hue_v_factor = 1./160. ;
 int depth_of_fill_is_absolute = 0 ;
 int depth_of_fill_absolute_y ;
 float horizon_curvature=0. ; // a proportion, up or down, at the edge of the image relative to the center of the image
@@ -95,15 +93,14 @@ int model_is_being_fit=1 ;
 float exposure_factor=1. ; // exposure factor
 
 int have_pto_fov=0 ;
-int n_strips ;
-int32 IMAGE_HEIGHT ;
-int32 IMAGE_WIDTH ;
+int32_t IMAGE_HEIGHT ;
+int32_t IMAGE_WIDTH ;
 uint16_t IMAGE_NSAMPLES ; // must be 16 bit, needed by call to tif library
 int IMAGE_HAS_ALPHA=0 ;
 
 // horizon_py is at x=0 ;
 float sun_x = 120., sun_py = .99, horizon_py = .5 ;
-float hue_horizon = 200, sat_depth = .8, sun_lum=.9 ;
+float hue_horizon = 200, sat_depth = .8, sky_lum=.9 ;
 
 // as determined from the sample points
 float hue_sky = 212 ;
@@ -112,23 +109,13 @@ float sat_sky=.7 ;
 
 float horizon_lift_angle_radians=0. ;
 
-// constraints on sun x position
-float sun_x_lo = -180. ;
-float sun_x_hi = 180. ;
+// not currently used, but leave in as comment for now
+/*  float horizon_slope=.05 ;  */
 
-// constraints on horizon_py position
-float horizon_py_lo = -0.5 ;
-float horizon_py_hi = 1.5 ;
-
-float horizon_slope=.05 ;
 float FOV_horizontal=120. ;
 float proportion_to_radian_factor_x ; // how many radians per proportion of full image in X dimension ?
 float proportion_to_radian_factor_y ; // how many radians per proportion of full image in Y dimension ?
 float maximum_vhat = 1. ; // maximum vhat in sky dome
-
-#ifdef TRY_SUN_STRETCH_DIST
-float sun_dist_stretch_factor=0.5 ; // adjusts px as a function of distance to sun_x for CIE calculation
-#endif
 
 int max_end_of_sky = -1 ;
 int min_end_of_sky = -1 ;
@@ -138,33 +125,20 @@ int min_start_of_sky = -1 ;
 // 2021, try nonlinear feathering
 float nonlinear_feather=1.0 ;
 
-//float perez_A=-1. ; // horizon-zenith gradient, -5 to 5
-//float perez_B=-0.32 ; // gradient intensity, -10 to 0
-//float perez_C=10. ; // circumsolar intensity, 0 to 25
-//float perez_D=-3. ; // circumsolar radius, -10 to 0
-//float perez_E=0.45 ; // backscattering effect, -1 to 5
-
-//float perez_A=0.001 ; // horizon-zenith gradient, -5 to 5
-//float perez_B=-1.00 ; // gradient intensity, -10 to 0
-//float perez_C=2. ; // circumsolar intensity, 0 to 25
-//float perez_D=-1.5 ; // circumsolar radius, -10 to 0
-//float perez_E=0.15 ; // backscattering effect, -1 to 5
-
+// These are the parameters for the CIE sky model
 // for clear blue sky with some haze this will produce
 // a result with high luminosity around the sun corona
 // as well as some lightening at the horizon
-
+// these will all be reset anyway by the time they are used
 float perez_A=-1.5 ; // horizon-zenith gradient, -5 to 5
 float perez_B=-0.80 ; // gradient intensity, -10 to 0
 float perez_C=2. ; // circumsolar intensity, 0 to 25
 float perez_D=-2.4 ; // circumsolar radius, -10 to 0
 float perez_E=-0.15 ; // backscattering effect, -1 to 5
 
-#ifdef TRY_SUN_STRETCH_DIST
-#define MAX_PARMS 17
-#else
+
 #define MAX_PARMS 16
-#endif
+
 struct OPT_PARM {
     float *variable_address ;
     char abreviation[8] ; // parameter name abreviation
@@ -183,7 +157,7 @@ struct OPT_PARM {
     {&hue_sky, "hs", "hue sky", 212., 180., 250., 1, 0, "Hue from HSV model"},
     {&hue_horizon, "hh", "hue_horizon", 212., 180., 250., 1, 0, "Horizon hue, not currenly used"},
     {&sat_depth, "sd", "sat_depth", .8, 0.01, 1.1, 1, 1, "Amount of saturation to apply, 0 to 1"},
-    {&sun_lum, "sl", "sky_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sky intensity"},
+    {&sky_lum, "sl", "sky_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sky intensity"},
     {&FOV_horizontal, "fov", "FOV_horizontal", 90., 1., 360., 1, 0, "The horizontal field of view of the image, degrees"},
     {&perez_A, "A", "perez_A", .001, -5., 5., 1, 0, "The A parameter of the perez CIE sky model"},
     {&perez_B, "B", "perez_B", -1., -10., -0.001, 1, 0, "The B parameter of the perez CIE sky model"},
@@ -192,9 +166,6 @@ struct OPT_PARM {
     {&perez_E, "E", "perez_E", 0.15, -1., 5., 1, 0, "The E parameter of the perez CIE sky model"},
     {&sky_gamma, "sg", "sky_gamma", 1.0, 1.e-4, 1000, 1, 1, "Gamma value for sky intensity"},
     {&exposure_factor, "ef", "exposure factor",    1.0,  0.1, 10.0, 1, 1, "Final exposure appled to sky intensity"},
-#ifdef TRY_SUN_STRETCH_DIST
-    {&sun_dist_stretch_factor, "sun_dist_stretch_factor", 0.5, -2., 2., 1},
-#endif
     } ;
 
 // restrict CIE sky types used in optimization
@@ -365,7 +336,7 @@ void hsv2rgb16(float h, float s, float v, uint16_t *dst_r, uint16_t *dst_g, uint
 
 void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16_t spp, uint16_t tif_config)
 {
-    int32 y ;
+    int32_t y ;
     /* read a row */
     for(y = 0 ; y < h ; y++) {
 	if(tif_config == PLANARCONFIG_CONTIG) {
@@ -383,7 +354,7 @@ void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16_t spp, uint16_t tif_co
     }
 }
 
-void copy_pixel(tdata_t *image, int32 xsrc, int32 ysrc, int32 xdest, int32 ydest)
+void copy_pixel(tdata_t *image, int32_t xsrc, int32_t ysrc, int32_t xdest, int32_t ydest)
 {
     ((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+0] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+0] ;
     ((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+1] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+1] ;
@@ -394,7 +365,7 @@ void copy_pixel(tdata_t *image, int32 xsrc, int32 ysrc, int32 xdest, int32 ydest
     }
 }
 
-int xy_is_opaque_pixel(tdata_t *image, int32 x, int32 y)
+int xy_is_opaque_pixel(tdata_t *image, int32_t x, int32_t y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
 	if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < HALF16)
@@ -403,7 +374,7 @@ int xy_is_opaque_pixel(tdata_t *image, int32 x, int32 y)
     return 1 ;
 }
 
-int xy_has_nonblack_pixel(tdata_t *image, int32 x, int32 y)
+int xy_has_nonblack_pixel(tdata_t *image, int32_t x, int32_t y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
@@ -421,9 +392,9 @@ int xy_has_nonblack_pixel(tdata_t *image, int32 x, int32 y)
     return 0 ;
 }
 
-void simple_find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t *image)
+void simple_find_start_of_sky(int16_t *start_of_sky,uint16_t w,uint16_t h,tdata_t *image)
 {
-    int32 x, y ;
+    int32_t x, y ;
 
     for(x = 0 ; x < w ; x++) {
 	start_of_sky[x] = 0 ;
@@ -446,9 +417,9 @@ void simple_find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t 
     fprintf(stderr, "Finished simple find start of sky\n") ;
 }
 
-void find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t *image,int fix_SOS_edges)
+void find_start_of_sky(int16_t *start_of_sky,uint16_t w,uint16_t h,tdata_t *image,int fix_SOS_edges)
 {
-    int32 x, y ;
+    int32_t x, y ;
 
     simple_find_start_of_sky(start_of_sky,w,h,image) ;
     return ;
@@ -456,7 +427,7 @@ void find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t *image,
     /* look for vertical gaps in sky (alpha=0), which can happen after lens correction */
 
     for(x = 0 ; x < w ; x++) {
-	int32 gap_start=-1, gap_end=-1 ;
+	int32_t gap_start=-1, gap_end=-1 ;
 
 	for(y = start_of_sky[x] ; y < h ; y++) {
 	    if(xy_has_nonblack_pixel(image, x, y) == 0) {
@@ -667,7 +638,7 @@ float sobel(tdata_t *image, int xc, int yc)
 
 void print_sobel(tdata_t *image, int x)
 {
-    int16 y ;
+    int16_t y ;
 
     for(y = end_of_sky[x]-5 ; y < end_of_sky[x]+5 ; y++) {
 	if( y == end_of_sky[x]) {
@@ -769,9 +740,9 @@ int get_sobel_eos(tdata_t *image, int x)
 
 
 
-void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *image,int fix_edges,int fix_slivers)
+void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata_t *image,int fix_edges,int fix_slivers)
 {
-    int16 x, y ;
+    int16_t x, y ;
 
     is_clear_sky = (uint8_t *)calloc(IMAGE_HEIGHT, sizeof(uint8_t)) ;
     sky_hue = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
@@ -921,78 +892,6 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 	end_of_sky[x] = get_sobel_eos(image,x) ;
     }
 
-    for(x = w ; x < w ; x++) {
-	if(column_mask[x] == 1) continue ;
-
-	// load up arrays
-	int first_y = raw_start_of_sky[x]+10 ;  // skip first 10 pixels
-
-	//first_y = end_of_sky[x]-6 ;  // temporarily see how this looks 
-	float top_mean[3], top_var[3] ;
-	float bot_mean[3], bot_var[3] ;
-	float max_diff_mean=0 ;
-	float n_diff_means=0. ;
-	float sum_diff_means=0. ;
-	int best_y=first_y ;
-
-	//fprintf(stderr, "\nNEW EOS x:%5d eos:%5d\n", x, end_of_sky[x]) ;
-
-	for(y = first_y ; y < IMAGE_HEIGHT-10 ; y++) {
-	    get_sky_mean_var(image, x, y-10, 10, top_mean, top_var) ;
-	    get_sky_mean_var(image, x, y+1, 10, bot_mean, bot_var) ;
-
-	    // if transparent or black, must be at bottom of image
-	    uint16_t r,g,b,a ;
-	    tif_get4c(image,x,y+10,r,g,b,a) ;
-
-	    if(a < HALF16) break ;
-	    if( r < BLK16 && g < BLK16 && b < BLK16 ) break ;
-
-	    // try to skip small highlights (jet trails) in sky
-	    tif_get3c(image,x,y,r,g,b) ;
-
-	    float rtop=(float)r/top_mean[0] ;
-	    float gtop=(float)g/top_mean[1] ;
-	    float btop=(float)b/top_mean[2] ;
-	    float rbot=(float)r/bot_mean[0] ;
-	    float gbot=(float)g/bot_mean[1] ;
-	    float bbot=(float)b/bot_mean[2] ;
-	    if( rtop > 1. && rbot > 1. && gtop > 1. && gbot > 1. && btop > 1. && bbot > 1.)
-		continue ;
-
-	    //float diff_mean = .299*fabs(top_mean[0]-bot_mean[0]) + .587*fabs(top_mean[1]-bot_mean[1]) + .114*fabs(top_mean[2]-bot_mean[2]) ;
-	    float diff_mean = fabs(top_mean[0]-bot_mean[0]) + fabs(top_mean[1]-bot_mean[1]) + fabs(top_mean[2]-bot_mean[2]) ;
-	    float rdiff=1. ;
-
-	    if(n_diff_means > 10.) rdiff = diff_mean/(sum_diff_means/n_diff_means) ;
-
-	    float prob = rdiff - 1. ;
-	    if(prob < 0.) prob=0 ;
-
-
-
-	    // probability it's a true diff is quite low in top of image
-	    //float prob = (float)y/(float)(IMAGE_HEIGHT/2.) ;
-	    //if(prob > 1.) prob = 1. ;
-
-	    //float tot_top_var = top_var[0] + top_var[1] + top_var[2] ;
-	    //float tot_bot_var = bot_var[0] + bot_var[1] + bot_var[2] ;
-
-	    if(max_diff_mean < diff_mean*prob) {
-		max_diff_mean = diff_mean*prob ;
-		best_y=y ;
-	    }
-
-	    sum_diff_means += diff_mean ;
-	    n_diff_means += 1. ;
-
-	    //fprintf(stderr, "        y:%5d %10.0f   %10.0f   %10.0f\n", y, diff_mean, tot_top_var, tot_bot_var) ;
-	}
-
-	end_of_sky[x] = best_y ;
-	end_of_sky[x] = get_sobel_eos(image,x) ;
-    }
-
     //look for and fix slivers
     fix_slivers=0 ;
     while(fix_slivers >0) {
@@ -1103,7 +1002,7 @@ float get_xy_L(tdata_t *image, int x, int y)
     return 0.21126*fr + 0.7152*fg + 0.0722*fb ;
 }
 
-void repair_sky_hue(tdata_t *image,int16 *start_of_sky,int16 *end_of_sky)
+void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 {
     int x, y ;
 
@@ -1302,7 +1201,7 @@ int sat_prediction_method = 1 ; // 1 means predict as function of (val,val*va), 
 float S_from_V_coefs[3] = {0.5,0.,0.} ; // coefs to predict sat from value
 float H_from_V_coefs[4] = {212,0.,0.,0.} ; // coefs to predict hue from value
 
-int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16 *start_of_sky,int16 *end_of_sky)
+int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 {
     int x, y ;
     float mean_column_length ;
@@ -1742,7 +1641,7 @@ struct V3D image_relative_pixel_to_V3_noclip(float px, float py)
     return pxpy_toV3D(px,py) ;
 }
 
-float F_CIE2003(float px, float py, float *pGamma, float *pTheta)
+float F_CIE2003(float px, float py, float *pGamma, float *pTheta, float *pCos_gamma)
 {
     /* assume observer is at origin */
     struct V3D view= image_relative_pixel_to_V3(px, py) ;
@@ -1750,12 +1649,12 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta)
 
     *pGamma = angle_between(&view,&V_sun,&dp_sun) ;
 
-    float cosGamma = cos(*pGamma) ;
+    *pCos_gamma = dp_sun ;
 
     // check if we are within the sun diameter
     if(*pGamma < M_PI/180.f*0.533f/2.) {
 	*pGamma = 0.f ;
-	cosGamma = 1.f ;
+	*pCos_gamma = 1.f ;
     }
 
     *pTheta = angle_between(&view,&V_zenith,&dp_zenith) ;
@@ -1785,7 +1684,7 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta)
 	exit(1) ;
     }
 
-    float L = (1.+perez_A*exp(perez_B/cos(*pTheta)))*(1.+perez_C*(exp(perez_D*(*pGamma))-exp(perez_D*M_PI/2.)) + perez_E*cosGamma*cosGamma) ;
+    float L = (1.+perez_A*exp(perez_B/cos(*pTheta)))*(1.+perez_C*(exp(perez_D*(*pGamma))-exp(perez_D*M_PI/2.)) + perez_E*(*pCos_gamma)*(*pCos_gamma)) ;
 
     if(isnan(L)) {
 	fprintf(stderr, "NAN in F_CIE2003, sun_x=%f sun_py=%f px=%f py=%f horizon_py=%f theta=%f gamma=%f\n",
@@ -1807,7 +1706,7 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta)
 
 float find_maximum_vhat(void)
 {
-    float gamma,theta ;
+    float gamma,theta,cos_gamma ;
     float px, py ;
 
     float sun_px = sun_x_angle2px(sun_x) ;
@@ -1815,13 +1714,13 @@ float find_maximum_vhat(void)
 
     if(sun_px >= -0.5 && sun_px <= 0.5 && sun_py >= 0.0 && sun_py <= 1.0) {
 	// if the sun is in the image, get vhat directly at the sun
-	max_vhat = F_CIE2003(sun_x_angle2px(sun_x), sun_py, &gamma, &theta) ;
+	max_vhat = F_CIE2003(sun_x_angle2px(sun_x), sun_py, &gamma, &theta, &cos_gamma) ;
     }
 
 
     for(px = -0.5f ; px < 0.501f ; px += .05f) {
 	for(py = 0.f ; py < 1.001f ; py += .05f) {
-	    float vhat_here = F_CIE2003(px, py, &gamma, &theta) ;
+	    float vhat_here = F_CIE2003(px, py, &gamma, &theta, &cos_gamma) ;
 	    if(vhat_here > max_vhat) max_vhat = vhat_here ;
 	}
     }
@@ -1852,7 +1751,7 @@ void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float px, flo
     if(shat < 0.0) shat = 0.0 ;
 
     shat *= sat_depth ;
-    vhat *= sun_lum ;
+    vhat *= sky_lum ;
 
     if(vhat > 1.f) vhat = 1.f ;
     if(vhat < 0.f) vhat = 0.f ;
@@ -1879,8 +1778,9 @@ void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
 
     float gamma ; // angle between view and sun vector
     float theta ; // angle between view and zenith vector
+    float cos_gamma ;
 
-    vhat = F_CIE2003(px, py, &gamma, &theta)/maximum_vhat ;
+    vhat = F_CIE2003(px, py, &gamma, &theta, &cos_gamma)/maximum_vhat ;
 
     if(vhat > 1.f) vhat = 1.f ;
     if(vhat < 0.f) vhat = 0.f ;
@@ -1890,10 +1790,8 @@ void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
 	vhat = 0. ;
     }
 
-    float cos_gamma = fabs(cos(gamma)) ; // note, we can get this direct from F_CIE2003 if we want
-
     if(sky_gamma > 1.e-10)
-	vhat *= (1.-pow(cos_gamma,1./sky_gamma)) ;
+	vhat *= (1.-pow(fabs(cos_gamma),1./sky_gamma)) ;
 
     //vhat = pow(vhat, 1./sky_gamma) ;
 
@@ -2048,7 +1946,7 @@ float find_horizon_py(int n_samples)
     autoset_lumf_flag=1 ;
     for(i=0 ; i < MAX_PARMS ; i++) {
 	if(opt_parms[i].grid_optimize_flag == 0) {
-	    if(!strcmp(opt_parms[i].name, "sun_lum")) {
+	    if(!strcmp(opt_parms[i].name, "sky_lum")) {
 		autoset_lumf_flag=0 ;
 	    }
 	}
@@ -2096,7 +1994,7 @@ float optimize_grid(int n_samples, int verbose)
     autoset_lumf_flag=1 ;
     for(i=0 ; i < MAX_PARMS ; i++) {
 	if(opt_parms[i].grid_optimize_flag == 0) {
-	    if(!strcmp(opt_parms[i].name, "sun_lum")) {
+	    if(!strcmp(opt_parms[i].name, "sky_lum")) {
 		autoset_lumf_flag=0 ;
 	    }
 	}
@@ -2155,7 +2053,7 @@ float smart_optimize_function(float *pParams)
 
 void smart_optimize(int n_samples)
 {
-    float guess[MAX_PARMS+1] = {0,sun_x,sun_py,sun_lum,horizon_py,perez_A,perez_B,perez_C,perez_D,perez_E,FOV_horizontal} ;
+    float guess[MAX_PARMS+1] = {0,sun_x,sun_py,sky_lum,horizon_py,perez_A,perez_B,perez_C,perez_D,perez_E,FOV_horizontal} ;
     float guess_delta[MAX_PARMS+1], c_lo[MAX_PARMS+1], c_hi[MAX_PARMS+1] ;
     int i ;
     int nparms_to_optimize=0 ;
@@ -2344,7 +2242,7 @@ int compute_feather_length(int x, int *pFeather_end_y, float depth_of_fill, floa
     return *pFeather_end_y - start_of_sky[x] ;
 }
 
-int wrong_hue_or_black(tdata_t *image, int32 x, int32 y)
+int wrong_hue_or_black(tdata_t *image, int32_t x, int32_t y)
 {
     uint16_t r,g,b,a ;
     tif_get4c(image,x,y,r,g,b,a) ;
@@ -2366,7 +2264,7 @@ int wrong_hue_or_black(tdata_t *image, int32 x, int32 y)
 }
 
 
-int xy_is_transparent(tdata_t *image, int32 x, int32 y)
+int xy_is_transparent(tdata_t *image, int32_t x, int32_t y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
@@ -2378,7 +2276,7 @@ int xy_is_transparent(tdata_t *image, int32 x, int32 y)
 }
 
 
-int xy_is_black_pixel(tdata_t *image, int32 x, int32 y)
+int xy_is_black_pixel(tdata_t *image, int32_t x, int32_t y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
@@ -3304,7 +3202,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
 }
 
-void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of_sky,int16 *final_end_of_sky,
+void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky,int16_t *final_end_of_sky,
 		    float depth_of_sample, int h, int w, float feather_factor, int debug, float depth_of_fill, int extra_feather_length)
 {
     int x, y ;
@@ -4432,7 +4330,7 @@ int main(int argc, char* argv[])
     TIFF* tifout = TIFFOpen(outfilename, "w");
 
     tsize_t ROWSIZE ;
-    int32 x, y, w, h ;
+    int32_t x, y, w, h ;
 
     // prepare output image to have same tags as input image
     uint16_t alltags[] = {
@@ -4512,28 +4410,6 @@ int main(int argc, char* argv[])
 
     p_half_image_width = 0.5 ;
     V_zenith= P3toV3(0., 1., 0.) ;
-
-    // if sun x position was supplied via the command line, it was given as a proportion of the image width
-    // now it must be converted to the uniform coordinates
-
-#ifdef OLD_SUN_X
-#define XP2U(x) ((float)(x)*((float)IMAGE_WIDTH)/((float)IMAGE_HEIGHT))
-
-    if(sun_x_pwidth > -9999.) {
-	sun_x = XP2U(sun_x_pwidth) ;
-    }
-
-    if(sun_x_pwidth_hi > -9999.) {
-	sun_x_hi = XP2U(sun_x_pwidth_hi) ;
-    }
-
-    if(sun_x_pwidth_lo > -9999.) {
-	sun_x_lo = XP2U(sun_x_pwidth_lo) ;
-    }
-
-    opt_parms[0].lo = sun_x_lo ;
-    opt_parms[0].hi = sun_x_hi ;
-#endif
 
     fprintf(stderr, "input image is %d x %d, %d bits, %d channels, %d = %d\n", (int)input_W, (int)input_H, (int)BPS, (int)SPP, (int)(input_W*BPS/8*SPP), (int)ROWSIZE) ;
 
@@ -4632,10 +4508,10 @@ int main(int argc, char* argv[])
     repair_alpha(image) ;
 
     /* find start of real image data */
-    raw_start_of_sky = (int16 *)calloc(w, sizeof(int16 *)) ;
-    start_of_sky = (int16 *)calloc(w, sizeof(int16 *)) ;
-    end_of_sky = (int16 *)calloc(w, sizeof(int16 *)) ;
-    final_end_of_sky = (int16 *)calloc(w, sizeof(int16 *)) ;
+    raw_start_of_sky = (int16_t *)calloc(w, sizeof(int16_t *)) ;
+    start_of_sky = (int16_t *)calloc(w, sizeof(int16_t *)) ;
+    end_of_sky = (int16_t *)calloc(w, sizeof(int16_t *)) ;
+    final_end_of_sky = (int16_t *)calloc(w, sizeof(int16_t *)) ;
 
 
     simple_find_start_of_sky(start_of_sky,w,h,image) ;
@@ -4717,8 +4593,8 @@ estimate_sky:
 	fprintf(stderr, "main:interpolate masked columns\n") ;
 	for(int m = 0 ; m < n_masks ; m++) {
 	    if(mask_l[m] > 0 && mask_r[m] < w-1) {
-		int32 x0 = mask_l[m]-1 ;
-		int32 x1 = mask_r[m]+1 ;
+		int32_t x0 = mask_l[m]-1 ;
+		int32_t x1 = mask_r[m]+1 ;
 
 		int max_y = start_of_sky[x0] ;
 
@@ -4912,7 +4788,7 @@ estimate_sky:
 	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
 	    if(column_mask[x] == 1) continue ;
 	    for(y = 0 ; y < raw_start_of_sky[x] ; y++) {
-		int16 dither = ((rand()%128) - 64)*8 ;
+		int16_t dither = ((rand()%128) - 64)*8 ;
 		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] += dither ;
 		dither = ((rand()%128) - 64)*8 ;
 		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] += dither ;
@@ -5066,18 +4942,18 @@ writeout:
 	//some useful debugging information
 	{
 	    float sun_px = sun_x_angle2px(sun_x) ;
-	    float gamma,theta ;
+	    float gamma,theta,cos_gamma ;
 	    printf("horizon_py:%f, sun_x_angle:%f sun(px,py):(%6.2f,%6.2f)\n\n", horizon_py, sun_x, sun_px, sun_py) ;
 	    printf("======== image_relative pixel_to_V3 for sun ============\n") ;
-	    F_CIE2003(sun_px, sun_py, &gamma, &theta) ;
+	    F_CIE2003(sun_px, sun_py, &gamma, &theta, &cos_gamma) ;
 	    printf("======== image_relative pixel_to_V3 for sun ============\n\n") ;
 	}
 
 	float px, py ;
 	py = sun_py ;
 	for(px = -0.5 ; px < 0.51 ; px += .05) {
-	    float gamma,theta ;
-	    float vhat = F_CIE2003(px, py, &gamma, &theta) ;
+	    float gamma,theta,cos_gamma ;
+	    float vhat = F_CIE2003(px, py, &gamma, &theta, &cos_gamma) ;
 	}
     }
 
