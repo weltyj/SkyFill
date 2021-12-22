@@ -4689,10 +4689,10 @@ estimate_sky:
 	depth_of_fill = 1. ;
 	//extra_feather_length=5 ;
 
-	// run a Disc filter on the sky to smooth edges
+	// run a Box filter on the sky to smooth edges
 	if(df_passes > 0) {
 
-	    fprintf(stderr, "main:disc filter size %d X %d\n", DBW, DBH) ;
+	    fprintf(stderr, "main:box filter size %d X %d\n", DBW, DBH) ;
 	    int i ;
 
 	    // alloc a buffer to hold output data
@@ -4705,7 +4705,7 @@ estimate_sky:
 	    int i ;
 	    df_passes-- ;
 
-	    fprintf(stderr, "main:disc filter\n") ;
+	    fprintf(stderr, "main:box filter\n") ;
 
 	    for(int ch=0 ; ch < 3 ; ch++) {
 		int ox, oy ;
@@ -4719,7 +4719,7 @@ estimate_sky:
 		    if(maxy < raw_start_of_sky[ox]) maxy = raw_start_of_sky[ox] ;
 		    if(maxy > IMAGE_HEIGHT-1) maxy = IMAGE_HEIGHT-1 ;
 
-		    if(ox == 0 && ch == 0) fprintf(stderr, "main:disc filter, start y loop\n") ;
+		    if(ox == 0 && ch == 0) fprintf(stderr, "main:box filter, start y loop\n") ;
 
 		    for(oy = 0 ; oy < maxy ; oy++) {
 
@@ -4752,7 +4752,7 @@ estimate_sky:
 
 		    if(maxy < raw_start_of_sky[ox]) maxy = raw_start_of_sky[ox] ;
 		    if(maxy > IMAGE_HEIGHT-1) maxy = IMAGE_HEIGHT-1 ;
-		    if(ox == 0 && ch == 0) fprintf(stderr, "main:disc filter, start second y loop\n") ;
+		    if(ox == 0 && ch == 0) fprintf(stderr, "main:box filter, start second y loop\n") ;
 
 		    for(oy = 0 ; oy < maxy ; oy++) {
 
