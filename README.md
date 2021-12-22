@@ -9,5 +9,5 @@ the sky image needed to blend with the stitched image coming from Hugin
 
 Dependencies:
 
-. libtiff
-. exiftool
+* libtiff
+* exiftool
