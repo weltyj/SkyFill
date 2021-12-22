@@ -1,8 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <malloc.h>
 #include "tiffio.h"
+
+// in case Windows MSVC, or 
+#define _USE_MATH_DEFINES
 #include <math.h>
+
 #include "amoeba_06.h"
 #include "string.h"
 #include "mstat.h"
@@ -13,29 +18,29 @@
 
 // four macros to get or set rgb and alpha 
 #define tif_get3c(image,x,y,r,g,b) {\
-		r = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
-		g = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
-		b = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
 		}
 
 #define tif_get4c(image,x,y,r,g,b,a) {\
-		r = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
-		g = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
-		b = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
-		a = ((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
 		}
 
 #define tif_set3c(image,x,y,r,g,b) {\
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16)r; \
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16)g; \
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16)b; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16_t)r; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16_t)g; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16_t)b; \
 		}
 
 #define tif_set4c(image,x,y,r,g,b,a) {\
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16)r; \
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16)g; \
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16)b; \
-		((uint16 *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] = (uint16)a; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16_t)r; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16_t)g; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16_t)b; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] = (uint16_t)a; \
 		}
 
 #define MAX16 65535
@@ -93,7 +98,7 @@ int have_pto_fov=0 ;
 int n_strips ;
 int32 IMAGE_HEIGHT ;
 int32 IMAGE_WIDTH ;
-uint16 IMAGE_NSAMPLES ; // must be 16 bit, needed by call to tif library
+uint16_t IMAGE_NSAMPLES ; // must be 16 bit, needed by call to tif library
 int IMAGE_HAS_ALPHA=0 ;
 
 // horizon_py is at x=0 ;
@@ -295,7 +300,7 @@ float sun_x_angle2px(float sun_x_angle)
     return sun_x_angle/FOV_horizontal ;
 }
 
-void rgb2hsv16(const uint16 src_r, const uint16 src_g, const uint16 src_b, float *h, float *s, float *v)
+void rgb2hsv16(const uint16_t src_r, const uint16_t src_g, const uint16_t src_b, float *h, float *s, float *v)
 {
     float r = (float)src_r / MAX16f;
     float g = (float)src_g / MAX16f;
@@ -331,7 +336,7 @@ void rgb2hsv16(const uint16 src_r, const uint16 src_g, const uint16 src_b, float
     if (*h < 0) *h += 360.0f;
 }
 
-void hsv2rgb16(float h, float s, float v, uint16 *dst_r, uint16 *dst_g, uint16 *dst_b)
+void hsv2rgb16(float h, float s, float v, uint16_t *dst_r, uint16_t *dst_g, uint16_t *dst_b)
 {
 
     float r, g, b; // 0.0-1.0
@@ -352,13 +357,13 @@ void hsv2rgb16(float h, float s, float v, uint16 *dst_r, uint16 *dst_g, uint16 *
         default: r = 0.f, g = 0.f, b = 0.f; break;
     }
 
-    *dst_r = (uint16)(r * MAX16); // dst_r : 0-255
-    *dst_g = (uint16)(g * MAX16); // dst_r : 0-255
-    *dst_b = (uint16)(b * MAX16); // dst_r : 0-255
+    *dst_r = (uint16_t)(r * MAX16); // dst_r : 0-255
+    *dst_g = (uint16_t)(g * MAX16); // dst_r : 0-255
+    *dst_b = (uint16_t)(b * MAX16); // dst_r : 0-255
 }
 
 
-void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16 spp, uint16 tif_config)
+void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16_t spp, uint16_t tif_config)
 {
     int32 y ;
     /* read a row */
@@ -366,7 +371,7 @@ void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16 spp, uint16 tif_config
 	if(tif_config == PLANARCONFIG_CONTIG) {
 	    TIFFReadScanline(tif,image[y],y,0) ;
 	} else if(tif_config == PLANARCONFIG_SEPARATE) {
-	    uint16 s ;
+	    uint16_t s ;
 
 	    for(s = 0 ; s < spp ; s++)
 		TIFFReadScanline(tif,image[y],y,s) ;
@@ -380,19 +385,19 @@ void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16 spp, uint16 tif_config
 
 void copy_pixel(tdata_t *image, int32 xsrc, int32 ysrc, int32 xdest, int32 ydest)
 {
-    ((uint16 *)(image[ydest]))[IMAGE_NSAMPLES*xdest+0] = ((uint16 *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+0] ;
-    ((uint16 *)(image[ydest]))[IMAGE_NSAMPLES*xdest+1] = ((uint16 *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+1] ;
-    ((uint16 *)(image[ydest]))[IMAGE_NSAMPLES*xdest+2] = ((uint16 *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+2] ;
+    ((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+0] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+0] ;
+    ((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+1] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+1] ;
+    ((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+2] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+2] ;
 
     if(IMAGE_HAS_ALPHA) {
-	((uint16 *)(image[ydest]))[IMAGE_NSAMPLES*xdest+3] = ((uint16 *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+3] ;
+	((uint16_t *)(image[ydest]))[IMAGE_NSAMPLES*xdest+3] = ((uint16_t *)(image[ysrc]))[IMAGE_NSAMPLES*xsrc+3] ;
     }
 }
 
 int xy_is_opaque_pixel(tdata_t *image, int32 x, int32 y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
-	if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] < HALF16)
+	if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < HALF16)
 	    return 0 ;
 
     return 1 ;
@@ -402,21 +407,21 @@ int xy_has_nonblack_pixel(tdata_t *image, int32 x, int32 y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
-	if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] < HALF16)
+	if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < HALF16)
 	    return 0 ;
     }
 
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] > BLK16)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] > BLK16)
 	return 1 ;
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] > BLK16)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] > BLK16)
 	return 1 ;
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] > BLK16)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] > BLK16)
 	return 1 ;
 
     return 0 ;
 }
 
-void simple_find_start_of_sky(int16 *start_of_sky,uint16 w,uint16 h,tdata_t *image)
+void simple_find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t *image)
 {
     int32 x, y ;
 
@@ -441,7 +446,7 @@ void simple_find_start_of_sky(int16 *start_of_sky,uint16 w,uint16 h,tdata_t *ima
     fprintf(stderr, "Finished simple find start of sky\n") ;
 }
 
-void find_start_of_sky(int16 *start_of_sky,uint16 w,uint16 h,tdata_t *image,int fix_SOS_edges)
+void find_start_of_sky(int16 *start_of_sky,uint16_t w,uint16_t h,tdata_t *image,int fix_SOS_edges)
 {
     int32 x, y ;
 
@@ -481,7 +486,7 @@ void find_start_of_sky(int16 *start_of_sky,uint16 w,uint16 h,tdata_t *image,int 
 		float pStart = 1.f - ((float)y-((float)gap_start-1.f))/((float)gap_end-(float)gap_start+3.f) ;
 		float pEnd = 1.f - pStart ;
 
-		tif_set4c(image,x,y, (uint16)(pStart*start_r + pEnd*end_r), (uint16)(pStart*start_g + pEnd*end_g), (uint16)(pStart*start_b + pEnd*end_b), MAX16) ; 
+		tif_set4c(image,x,y, (uint16_t)(pStart*start_r + pEnd*end_r), (uint16_t)(pStart*start_g + pEnd*end_g), (uint16_t)(pStart*start_b + pEnd*end_b), MAX16) ; 
 	    }
 	}
 
@@ -526,7 +531,7 @@ void get_sky_mean_var(tdata_t *image, int x, int y0, int n, float mean[], float 
     int y ;
 
     for(y = y0 ; y < y0+n ; y++) {
-	uint16 r,g,b ;
+	uint16_t r,g,b ;
 	tif_get3c(image,x,y,r,g,b) ;
 
 	sum[0] += r ;
@@ -548,10 +553,10 @@ void get_sky_mean_var(tdata_t *image, int x, int y0, int n, float mean[], float 
 
 
 float *sky_hue, *sky_val, *sky_sat  ;
-uint8 *is_clear_sky ;
+uint8_t *is_clear_sky ;
 int n_sky ;
 
-int is_end_of_sky(uint16 y, int n_samples, float *hdiff, float *sdiff, float *vdiff)
+int is_end_of_sky(uint16_t y, int n_samples, float *hdiff, float *sdiff, float *vdiff)
 {
     float m_hue0=0. ;
     float m_val0=0. ;
@@ -621,9 +626,9 @@ int is_end_of_sky(uint16 y, int n_samples, float *hdiff, float *sdiff, float *vd
 
 float sobel(tdata_t *image, int xc, int yc)
 {
-    uint16 r[3][3] ;
-    uint16 g[3][3] ;
-    uint16 b[3][3] ;
+    uint16_t r[3][3] ;
+    uint16_t g[3][3] ;
+    uint16_t b[3][3] ;
 
     for(int x = xc-1 ; x <= xc+1 ; x++) {
 	int i = x - (xc-1) ;
@@ -768,7 +773,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 {
     int16 x, y ;
 
-    is_clear_sky = (uint8 *)calloc(IMAGE_HEIGHT, sizeof(uint8)) ;
+    is_clear_sky = (uint8_t *)calloc(IMAGE_HEIGHT, sizeof(uint8_t)) ;
     sky_hue = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
     sky_val = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
     sky_sat = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
@@ -810,7 +815,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 	    is_clear_sky[y]=1 ;
 
 	    // if transparent or black, must be at bottom of image
-	    uint16 r,g,b,a ;
+	    uint16_t r,g,b,a ;
 	    tif_get4c(image,x,y+10,r,g,b,a) ;
 
 	    if(a < HALF16) break ;
@@ -846,7 +851,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 	// load up arrays
 
 	for(y = first_y ; y < first_y+10 ; y++) {
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    float h,s,v ;
@@ -864,7 +869,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 		break ;
 	    }
 
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y+10,r,g,b) ;
 
 	    float h,s,v ;
@@ -879,7 +884,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 	float vdiff_prev=vdiff ;
 
 	for(y = end_of_sky[x]+1 ; y < h-10 ; y++) {
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y+5,r,g,b) ;
 
 	    float h,s,v ;
@@ -937,7 +942,7 @@ void find_end_of_sky(int16 *end_of_sky,int16 *start_of_sky,int w,int h,tdata_t *
 	    get_sky_mean_var(image, x, y+1, 10, bot_mean, bot_var) ;
 
 	    // if transparent or black, must be at bottom of image
-	    uint16 r,g,b,a ;
+	    uint16_t r,g,b,a ;
 	    tif_get4c(image,x,y+10,r,g,b,a) ;
 
 	    if(a < HALF16) break ;
@@ -1089,7 +1094,7 @@ float get_xy_L(tdata_t *image, int x, int y)
 {
     if(y < 0) y = 0 ;
     if(y > IMAGE_HEIGHT-1) y = IMAGE_HEIGHT-1 ;
-    uint16 r,g,b ;
+    uint16_t r,g,b ;
     tif_get3c(image,x,y,r,g,b) ;
 
     float fr = (float)r/MAX16f ;
@@ -1129,7 +1134,7 @@ void repair_sky_hue(tdata_t *image,int16 *start_of_sky,int16 *end_of_sky)
 	for(y = start_of_sky[x] ; y <= end_of_sky[x] ; y++) {
 	    if(y > IMAGE_HEIGHT-1) break ;
 
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    float h,s,v ;
@@ -1164,7 +1169,7 @@ void repair_sky_hue(tdata_t *image,int16 *start_of_sky,int16 *end_of_sky)
 	for(y = start_of_sky[x] ; y <= end_of_sky[x] ; y++) {
 	    if(y > IMAGE_HEIGHT-1) break ;
 
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    float h,s,v ;
@@ -1240,7 +1245,7 @@ void repair_sky_hue(tdata_t *image,int16 *start_of_sky,int16 *end_of_sky)
 
 
     for(x=min_sky_hue_mask ; x < max_sky_hue_mask ; x ++) {
-	uint16 r,g,b ;
+	uint16_t r,g,b ;
 	if(column_mask[x] == 1) continue ;
 
 	float pleft = 1.-(float)(x-min_sky_hue_mask)/(float)(max_sky_hue_mask-min_sky_hue_mask) ;
@@ -1287,7 +1292,7 @@ struct sample_point {
     float px, py ;
     float h,s,v ;
     float v_hat ;
-    uint16 r,g,b ;
+    uint16_t r,g,b ;
 } ;
 
 struct sample_point *samples = NULL ;
@@ -1350,8 +1355,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16 *star
     float sum_sat_wgts = 0. ;
     float sum_sat=0. ;
     int n_max_rows= IMAGE_HEIGHT/dy ;
-    float sum_h_by_row[n_max_rows] ;
-    int n_h_by_row[n_max_rows] ;
+
+    float *sum_h_by_row = (float *)calloc(n_max_rows, sizeof(float)) ;
+    int *n_h_by_row = (int *)calloc(n_max_rows, sizeof(int)) ;
 
     for(int i = 0 ; i < n_max_rows ; i++) {
 	sum_h_by_row[i] = 0. ;
@@ -1360,7 +1366,7 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16 *star
 
 
     for(x=0 ; x < IMAGE_WIDTH ; x += dx) {
-	uint16 r,g,b ;
+	uint16_t r,g,b ;
 
 	if(column_mask[x] == 1) continue ; // don't attempt a mean sky sample inside a masked area
 	if(fix_sky_hue && x>=min_sky_hue_mask && x <= min_sky_hue_mask) continue ;
@@ -1410,9 +1416,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16 *star
 
 		if(n == 0) continue ; // n == 0 could potentially happen near edges of detected sky area
 
-		r = (uint16)(sum_r/(float)n) ;
-		g = (uint16)(sum_g/(float)n) ;
-		b = (uint16)(sum_b/(float)n) ;
+		r = (uint16_t)(sum_r/(float)n) ;
+		g = (uint16_t)(sum_g/(float)n) ;
+		b = (uint16_t)(sum_b/(float)n) ;
 
 		float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 		float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
@@ -1472,6 +1478,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16 *star
 	}
     }
     fprintf(stderr, "\n") ;
+
+    free(sum_h_by_row) ;
+    free(n_h_by_row) ;
 
     hue_sky = sum_hue/sum_hue_wgts ;
     sat_sky = sum_sat/sum_sat_wgts ;
@@ -1898,7 +1907,7 @@ void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
     *pV = vhat * exposure_factor ;
 }
 
-void predict_sky_color(float px, float py, uint16 *rhat, uint16 *ghat, uint16*bhat)
+void predict_sky_color(float px, float py, uint16_t *rhat, uint16_t *ghat, uint16_t*bhat)
 {
     float hhat, shat, vhat ;
 
@@ -1976,7 +1985,7 @@ float samples_error(void)
 	if(!(calln % 1000)) fprintf(stderr, "mean vhat=%f\n", sum_vhat/(float)n_samples_to_optimize) ;
     } else {
 	for(i = 0 ; i < n_samples_to_optimize ; i++) {
-	    uint16 rhat,ghat,bhat ;
+	    uint16_t rhat,ghat,bhat ;
 	    predict_sky_color(samples[i].px, samples[i].py, &rhat, &ghat, &bhat) ;
 	    float err_r = (samples[i].r - rhat) ;
 	    float err_g = (samples[i].g - ghat) ;
@@ -2205,7 +2214,7 @@ void smart_optimize(int n_samples)
 
 
 // how much of the new estimate to use at pixel x, y
-float raw_compute_feather_at_y(int x, int y, int feather_length, uint16 b, float feather_factor)
+float raw_compute_feather_at_y(int x, int y, int feather_length, uint16_t b, float feather_factor)
 {
     //if(x == 0) {
 	//fprintf(stderr, "INFO: CFAY 1, x:%d y:%d sos:%d eos:%d fl:%d ff:%f\n", x, y, raw_start_of_sky[x], end_of_sky[x], feather_length, feather_factor) ;
@@ -2272,7 +2281,7 @@ int raw_compute_feather_length(int x, int *pFeather_end_y, float depth_of_fill, 
 }
 
 // how much of the new estimate to use at pixel x, y
-float compute_feather_at_y(int x, int y, int feather_length, uint16 b, float feather_factor)
+float compute_feather_at_y(int x, int y, int feather_length, uint16_t b, float feather_factor)
 {
     //if(x == 0) {
 	//fprintf(stderr, "INFO: CFAY 1, x:%d y:%d sos:%d eos:%d fl:%d ff:%f\n", x, y, start_of_sky[x], end_of_sky[x], feather_length, feather_factor) ;
@@ -2337,7 +2346,7 @@ int compute_feather_length(int x, int *pFeather_end_y, float depth_of_fill, floa
 
 int wrong_hue_or_black(tdata_t *image, int32 x, int32 y)
 {
-    uint16 r,g,b,a ;
+    uint16_t r,g,b,a ;
     tif_get4c(image,x,y,r,g,b,a) ;
 
     /* if alpha channel is nonzero then hugin has placed image data here */
@@ -2361,7 +2370,7 @@ int xy_is_transparent(tdata_t *image, int32 x, int32 y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
-	if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] < 256*64)
+	if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < 256*64)
 	    return 1 ;
     }
 
@@ -2373,15 +2382,15 @@ int xy_is_black_pixel(tdata_t *image, int32 x, int32 y)
 {
     /* if alpha channel is nonzero then hugin has placed image data here */
     if(IMAGE_HAS_ALPHA) {
-	if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] < 256*64)
+	if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < 256*64)
 	    return 0 ;
     }
 
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] > 256*15)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] > 256*15)
 	return 0 ;
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] > 256*15)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] > 256*15)
 	return 0 ;
-    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] > 256*15)
+    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] > 256*15)
 	return 0 ;
 
     return 1 ;
@@ -2399,7 +2408,7 @@ void repair_alpha(tdata_t *image)
 
     for(x = 0 ; x < IMAGE_WIDTH ; x++) {
 	for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    // nearest neighbor search +/- 2 pixels to find max r,g,b in area
@@ -2414,7 +2423,7 @@ void repair_alpha(tdata_t *image)
 
 	    for(int dx=x0 ; dx<=x1 ; dx++) {
 		for(int dy=y0 ; dy<=y1 ; dy++) {
-		    uint16 r_neighbor,g_neighbor,b_neighbor,a_neighbor ;
+		    uint16_t r_neighbor,g_neighbor,b_neighbor,a_neighbor ;
 		    tif_get4c(image,dx,dy,r_neighbor,g_neighbor,b_neighbor,a_neighbor) ;
 
 		    if(a_neighbor > 0) {
@@ -2487,18 +2496,18 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	increment=1 ;
     }
 
-    uint16 *x_possible_coords, *y_possible_coords, n_possible_points ;
-    uint16 *x_coords, *y_coords, n_points ;
-    uint8 *point_status ;
+    uint16_t *x_possible_coords, *y_possible_coords, n_possible_points ;
+    uint16_t *x_coords, *y_coords, n_points ;
+    uint8_t *point_status ;
 
     n_points=0 ;
-    point_status = (uint8 *)calloc(max_points, sizeof(uint8)) ;
-    x_coords = (uint16 *)calloc(max_points, sizeof(uint16)) ;
-    y_coords = (uint16 *)calloc(max_points, sizeof(uint16)) ;
+    point_status = (uint8_t *)calloc(max_points, sizeof(uint8_t)) ;
+    x_coords = (uint16_t *)calloc(max_points, sizeof(uint16_t)) ;
+    y_coords = (uint16_t *)calloc(max_points, sizeof(uint16_t)) ;
 
     n_possible_points=0 ;
-    x_possible_coords = (uint16 *)calloc(max_points, sizeof(uint16)) ;
-    y_possible_coords = (uint16 *)calloc(max_points, sizeof(uint16)) ;
+    x_possible_coords = (uint16_t *)calloc(max_points, sizeof(uint16_t)) ;
+    y_possible_coords = (uint16_t *)calloc(max_points, sizeof(uint16_t)) ;
 
     // look through all possible pixels
     for(x = x0 ; x <= x1 ; x += increment) {
@@ -2522,17 +2531,17 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	    /* if alpha channel is small then hugin indicates no image data here */
 #ifdef GMR_DEBUG
 	    if(gmr_debug) {
-		uint16 r,g,b,a ;
+		uint16_t r,g,b,a ;
 		tif_get4c(image,x,y,r,g,b,a) ;
 		fprintf(stderr, "GMR: pixel x,y:%d,%d rgba=%5d,%5d,%5d,%5d\n", x,y,r,g,b,a) ;
 	    }
 #endif
-	    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] < MAX16)
+	    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] < MAX16)
 		continue ;
 
-/*  	    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] <= BLK16) continue ;  */
-/*  	    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] <= BLK16) continue ;  */
-/*  	    if(((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] <= BLK16) continue ;  */
+/*  	    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] <= BLK16) continue ;  */
+/*  	    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] <= BLK16) continue ;  */
+/*  	    if(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] <= BLK16) continue ;  */
 
 	    if(n_possible_points == max_points) {
 		fprintf(stderr, "FATAL: n_possible_points > max_points(%d) in get_mean_rgb(), search_width=%d\n", n_possible_points, search_width) ;
@@ -2581,9 +2590,9 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
     for(int i=0 ; i < n_possible_points ; i++) {
 	x = x_possible_coords[i] ;
 	y = y_possible_coords[i] ;
-	sum[0] += (float)((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] ; // R
-	sum[1] += (float)((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] ; // G
-	sum[2] += (float)((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] ; // B
+	sum[0] += (float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] ; // R
+	sum[1] += (float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] ; // G
+	sum[2] += (float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] ; // B
     }
 
     mean[0] = sum[0] / (float)n_possible_points ;
@@ -2709,7 +2718,7 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	if(order_y) { xv[j] = y ; j++; }
 	if(order_y > 1) { xv[j] = y*y ; j++; }
 
-	uint16 pixel[3] ;
+	uint16_t pixel[3] ;
 	tif_get3c(image,x,y,pixel[0],pixel[1],pixel[2]) ;
 
 	sum_reg((&fit_struct[0]), xv, (double)pixel[0]) ;
@@ -2804,7 +2813,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    for(y = raw_start_of_sky[x]-1 ; y > 0 ; y--) {
 		if(xy_is_black_pixel(image,x,y) == 1) {
 		    fprintf(stderr, "RTOS found black pixel at %d,%d\n",x,y) ;
-		    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] = 0 ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] = 0 ;
 		    n_ok=0 ;
 		} else if(n_ok > 10) {
 		    break ;
@@ -2825,7 +2834,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x+1,y) == 1) {
 		    if(column_mask[x+1] == 0) continue ;
 		    fprintf(stderr, "RTOS LR fix x,y %d,%d\n", x,y) ;
-		    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*(x+1)+3] = 0 ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x+1)+3] = 0 ;
 		    max_x = x+10 ;
 		    if(max_x > IMAGE_WIDTH-1) max_x = IMAGE_WIDTH-1 ;
 		}
@@ -2837,7 +2846,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x-1,y) == 1) {
 		    if(column_mask[x-1] == 0) continue ;
 		    fprintf(stderr, "RTOS RL fix x,y %d,%d\n", x,y) ;
-		    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*(x-1)+3] = 0 ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x-1)+3] = 0 ;
 		    min_x = x-10 ;
 		    if(min_x < 0) min_x = 0 ;
 		}
@@ -2963,7 +2972,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 			float ghat = p0*ghat0 + p1*ghat1 ;
 			float bhat = p0*bhat0 + p1*bhat1 ;
 
-			tif_set4c(image,x,y, (uint16)rhat, (uint16)ghat, (uint16)bhat, MAX16 );
+			tif_set4c(image,x,y, (uint16_t)rhat, (uint16_t)ghat, (uint16_t)bhat, MAX16 );
 		    }
 		}
 
@@ -3068,7 +3077,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 			    float ghat = p0*ghat0 + p1*ghat1 ;
 			    float bhat = p0*bhat0 + p1*bhat1 ;
 
-			    tif_set4c(image,x,y, (uint16)rhat, (uint16)ghat, (uint16)bhat, MAX16 );
+			    tif_set4c(image,x,y, (uint16_t)rhat, (uint16_t)ghat, (uint16_t)bhat, MAX16 );
 
 			    start_of_sky[x] = y ;
 			}
@@ -3121,7 +3130,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		float ghat = gcoef[0] + gcoef[1]*(float)x + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		float bhat = bcoef[0] + bcoef[1]*(float)x + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
 
-		tif_set4c(image,x,y, (uint16)rhat, (uint16)ghat, (uint16)bhat, MAX16 );
+		tif_set4c(image,x,y, (uint16_t)rhat, (uint16_t)ghat, (uint16_t)bhat, MAX16 );
 		start_of_sky[x] = y ;
 	    }
 
@@ -3161,7 +3170,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
 		//fprintf(stderr, "    x:%d rgb:%d,%d,%d\n", x, (int)rhat,(int)ghat,(int)bhat) ;
 
-		tif_set4c(image,x,y, (uint16)rhat, (uint16)ghat, (uint16)bhat, MAX16 );
+		tif_set4c(image,x,y, (uint16_t)rhat, (uint16_t)ghat, (uint16_t)bhat, MAX16 );
 		start_of_sky[x] = y ;
 	    }
 
@@ -3245,7 +3254,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		    float ghat = gcoef[0] + gcoef[1]*(float)x + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		    float bhat = bcoef[0] + bcoef[1]*(float)x + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
 
-		    tif_set4c(image,x,y, (uint16)(rhat+0.5), (uint16)(ghat+0.5), (uint16)(bhat+0.5), MAX16 );
+		    tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
 
 		    start_of_sky[x]-- ;
 		}
@@ -3258,7 +3267,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		    float ghat = gcoef[0] + gcoef[1]*(float)x2 + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		    float bhat = bcoef[0] + bcoef[1]*(float)x2 + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
 
-		    tif_set4c(image,x2,y, (uint16)(rhat+0.5), (uint16)(ghat+0.5), (uint16)(bhat+0.5), MAX16 );
+		    tif_set4c(image,x2,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
 		    start_of_sky[x2]-- ;
 		}
 	    }
@@ -3281,7 +3290,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		    float ghat = gcoef[0] + gcoef[1]*(float)x + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		    float bhat = bcoef[0] + bcoef[1]*(float)x + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
 
-		    tif_set4c(image,x,y, (uint16)(rhat+0.5), (uint16)(ghat+0.5), (uint16)(bhat+0.5), MAX16 );
+		    tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
 		}
 
 		start_of_sky[x] = min_start_of_sky ;
@@ -3381,14 +3390,14 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of
 		float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
 		float hhat,shat,vhat ;
-		uint16 rhat, ghat, bhat ;
+		uint16_t rhat, ghat, bhat ;
 
 		predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
 		shat *= final_saturation_factor ;
 
 		hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;
 
-		tif_set4c(image,x,y, (uint16)(rhat+0.5), (uint16)(ghat+0.5), (uint16)(bhat+0.5), MAX16 );
+		tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
 	    }
 
 	}
@@ -3431,7 +3440,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of
 
 	    predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
 
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    float h,s,v ;
@@ -3525,14 +3534,14 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of
 
 
 	for(y = 0 ; y < feather_end_y ; y++) {
-	    uint16 a = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+3] ;
+	    uint16_t a = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] ;
 
 	    if(a < HALF16 && y > raw_start_of_sky[x]) continue ; // do not adjust transparent pixels below original start of sky
 
-	    uint16 rhat, ghat, bhat ;
+	    uint16_t rhat, ghat, bhat ;
 
 	    // current pixel value
-	    uint16 r,g,b ;
+	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    // completely model sky color
@@ -3583,9 +3592,9 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of
 
 
 
-	    r = (uint16)(fp0*(float)rhat + fp1*(float)r+0.5) ;
-	    g = (uint16)(fp0*(float)ghat + fp1*(float)g+0.5) ;
-	    b = (uint16)(fp0*(float)bhat + fp1*(float)b+0.5) ;
+	    r = (uint16_t)(fp0*(float)rhat + fp1*(float)r+0.5) ;
+	    g = (uint16_t)(fp0*(float)ghat + fp1*(float)g+0.5) ;
+	    b = (uint16_t)(fp0*(float)bhat + fp1*(float)b+0.5) ;
 	    tif_set4c(image,x,y, r,g,b,MAX16) ;
 	}
 
@@ -3606,12 +3615,12 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16 *start_of_sky,int16 *end_of
 		y = yeos+1 ;
 		final_end_of_sky[x] = y ;
 
-		uint16 r,g,b,a ;
+		uint16_t r,g,b,a ;
 		tif_get4c(image,x,y,r,g,b,a) ;
 
 		if(a < HALF16 && y > raw_start_of_sky[x]) continue ; // do not adjust transparent pixels below original start of sky
 
-		tif_set3c(image,x,y, (uint16)((float)r*fac+0.5), (uint16)((float)g*fac+0.5), (uint16)((float)b*fac+0.5));
+		tif_set3c(image,x,y, (uint16_t)((float)r*fac+0.5), (uint16_t)((float)g*fac+0.5), (uint16_t)((float)b*fac+0.5));
 	    }
 	}
     }
@@ -3672,7 +3681,7 @@ void make_sky_uniform(tdata_t *image, int flag, int x0, int x1)
 	    if(end_of_sky[x] >= y) {
 		if(flag == 2 && y < start_of_sky[x]) continue ;
 
-		uint16 r,g,b ;
+		uint16_t r,g,b ;
 		tif_get3c(image,x,y,r,g,b) ;
 
 		sum[0] += r ;
@@ -3708,9 +3717,9 @@ void make_sky_uniform(tdata_t *image, int flag, int x0, int x1)
 		    }
 
 		    float pmean = 1.-(float)(y-blend_y0)/(float)(blend_y1-blend_y0) ;
-		    float r = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] ;
-		    float g = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] ;
-		    float b = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] ;
+		    float r = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] ;
+		    float g = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] ;
+		    float b = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] ;
 		    r = pmean*sum[0] + (1.-pmean)*r ;
 		    g = pmean*sum[1] + (1.-pmean)*g ;
 		    b = pmean*sum[2] + (1.-pmean)*b ;
@@ -3731,9 +3740,9 @@ void make_sky_uniform(tdata_t *image, int flag, int x0, int x1)
 		float pmean = 1.-((float)y-blend_y0)/(float)(blend_y1-blend_y0) ; //at y == y0, use 100% of mean value, linear change to 0% of mean at y == y1
 
 		if(pmean > 0.) {
-		    float r = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] ;
-		    float g = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] ;
-		    float b = ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] ;
+		    float r = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] ;
+		    float g = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] ;
+		    float b = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] ;
 		    r = pmean*sum[0] + (1.-pmean)*r ;
 		    g = pmean*sum[1] + (1.-pmean)*g ;
 		    b = pmean*sum[2] + (1.-pmean)*b ;
@@ -4119,8 +4128,8 @@ int main(int argc, char* argv[])
 	exit(1) ;
     }
 
-    uint32 input_W, input_H ;
-    uint16 BPS, SPP, TIF_CONFIG ;
+    uint32_t input_W, input_H ;
+    uint16_t BPS, SPP, TIF_CONFIG ;
 
     TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &input_W);
     TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &input_H);
@@ -4426,7 +4435,7 @@ int main(int argc, char* argv[])
     int32 x, y, w, h ;
 
     // prepare output image to have same tags as input image
-    uint16 alltags[] = {
+    uint16_t alltags[] = {
 			TIFFTAG_IMAGEWIDTH,
 			TIFFTAG_IMAGELENGTH,
 			TIFFTAG_BITSPERSAMPLE,
@@ -4441,8 +4450,8 @@ int main(int argc, char* argv[])
     int i ;
 
     for(i = 0 ; i < 10 ; i++) {
-	uint16 tag = alltags[i] ;
-	uint32 tmp ;
+	uint16_t tag = alltags[i] ;
+	uint32_t tmp ;
 
 	if(tag == TIFFTAG_IMAGEWIDTH && quick_test) {
 	    if(TIFFGetField(tif, tag, &tmp)) {
@@ -4464,9 +4473,9 @@ int main(int argc, char* argv[])
 
     if(!use_exiftool) {
 	{
-	    uint16 tag = TIFFTAG_ICCPROFILE ;
+	    uint16_t tag = TIFFTAG_ICCPROFILE ;
 
-	    uint32 tmp[4] ;
+	    uint32_t tmp[4] ;
 	    unsigned char buf[4][2000] ;
 	    if(TIFFGetField(tif, tag, tmp, buf)) {
 		fprintf(stderr, "setting ICCPROFILE tag in output file, tmp is %d,%d,%d\n", (int)tmp[0],(int)tmp[1],(int)tmp[2]) ;
@@ -4730,7 +4739,7 @@ estimate_sky:
 		    for(x = x0+1 ; x < x1 ; x++) {
 			float pStart = 1.f - ((float)x-((float)x0))/((float)x1-(float)x0+1.f) ;
 			float pEnd = 1.f - pStart ;
-			tif_set4c(image,x,y, (uint16)(pStart*start_r + pEnd*end_r), (uint16)(pStart*start_g + pEnd*end_g), (uint16)(pStart*start_b + pEnd*end_b), MAX16) ;
+			tif_set4c(image,x,y, (uint16_t)(pStart*start_r + pEnd*end_r), (uint16_t)(pStart*start_g + pEnd*end_g), (uint16_t)(pStart*start_b + pEnd*end_b), MAX16) ;
 		    }
 		}
 
@@ -4753,7 +4762,7 @@ estimate_sky:
 	    for(y = 0 ; y < min_sky ; y++) {
 		// read values into buf
 		for(x = 0 ; x < w ; x++) {
-		    buf[x] = (float)((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+ch] ;
+		    buf[x] = (float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] ;
 		}
 
 		for(x=HBW ; x < w-HBW ; x++) {
@@ -4766,21 +4775,21 @@ estimate_sky:
 			sum += buf[dx] ;
 			n += 1. ;
 		    }
-		    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16)(sum/n) ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16_t)(sum/n) ;
 
 		    if(x == HBW) {
 			for(dx=0 ; dx < HBW ; dx++) {
 			    if(column_mask[dx] == 1) continue ;
-			    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*dx+ch] = (uint16)(sum/(float)(HBW*2+1)) ;
+			    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*dx+ch] = (uint16_t)(sum/(float)(HBW*2+1)) ;
 			}
 		    } else if(x == w-HBW-1) {
 			for(dx=x ; dx < x+HBW ; dx++) {
 			    if(column_mask[dx] == 1) continue ;
-			    ((uint16 *)(image[y]))[IMAGE_NSAMPLES*dx+ch] = (uint16)(sum/(float)(HBW*2+1)) ;
+			    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*dx+ch] = (uint16_t)(sum/(float)(HBW*2+1)) ;
 			}
 		    } else {
 			if(column_mask[x] == 1) continue ;
-			((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16)(sum/(float)(HBW*2+1)) ;
+			((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16_t)(sum/(float)(HBW*2+1)) ;
 		    }
 
 		}
@@ -4799,7 +4808,7 @@ estimate_sky:
     {
 	// this needs to be in {}'s because the "goto writeout" isn't happy when
 	// other variables are declared in the scope between the goto and the label
-	uint16 *output_buf[IMAGE_HEIGHT] ;
+	uint16_t **output_buf = (uint16_t **) calloc(IMAGE_HEIGHT, sizeof(uint16_t *)) ;
 	float save_depth_of_fill=depth_of_fill ;
 	depth_of_fill = 1. ;
 	//extra_feather_length=5 ;
@@ -4812,7 +4821,7 @@ estimate_sky:
 
 	    // alloc a buffer to hold output data
 	    for(i = 0 ; i < IMAGE_HEIGHT ; i++) {
-		output_buf[i] = (uint16 *) calloc(IMAGE_WIDTH, sizeof(uint16)) ;
+		output_buf[i] = (uint16_t *) calloc(IMAGE_WIDTH, sizeof(uint16_t)) ;
 	    }
 	}
 
@@ -4850,12 +4859,12 @@ estimate_sky:
 				if(y < 0) continue ;
 				if(y > maxy) break ;
 				if(y > IMAGE_HEIGHT-1) break ;
-				sum += ((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+ch] ;
+				sum += ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] ;
 				n += 1. ;
 			    }
 			}
 
-			output_buf[oy][ox] = (uint16)(sum/n+0.5) ;
+			output_buf[oy][ox] = (uint16_t)(sum/n+0.5) ;
 		    }
 		}
 
@@ -4871,13 +4880,13 @@ estimate_sky:
 
 		    for(oy = 0 ; oy < maxy ; oy++) {
 
-			uint16 b = ((uint16 *)(image[oy]))[IMAGE_NSAMPLES*ox+2] ;
+			uint16_t b = ((uint16_t *)(image[oy]))[IMAGE_NSAMPLES*ox+2] ;
 			float fp0 = raw_compute_feather_at_y(ox, oy, feather_length, b, feather_factor) ;
-			uint16 new = output_buf[oy][ox] ;
-			uint16 old = ((uint16 *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] ;
-			((uint16 *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] = (uint16)(fp0*(float)new + (1.-fp0)*(float)old + 0.5) ;
+			uint16_t new = output_buf[oy][ox] ;
+			uint16_t old = ((uint16_t *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] ;
+			((uint16_t *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] = (uint16_t)(fp0*(float)new + (1.-fp0)*(float)old + 0.5) ;
 
-/*  			uint16 old = ((uint16 *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] = output_buf[oy][ox] ;  */
+/*  			uint16_t old = ((uint16_t *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] = output_buf[oy][ox] ;  */
 		    }
 		}
 	    }
@@ -4887,6 +4896,7 @@ estimate_sky:
 		for(i = 0 ; i <= max_end_of_sky ; i++) {
 		    free(output_buf[i]) ;
 		}
+		free(output_buf) ;
 	    }
 
 	}
@@ -4903,11 +4913,11 @@ estimate_sky:
 	    if(column_mask[x] == 1) continue ;
 	    for(y = 0 ; y < raw_start_of_sky[x] ; y++) {
 		int16 dither = ((rand()%128) - 64)*8 ;
-		((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+0] += dither ;
+		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] += dither ;
 		dither = ((rand()%128) - 64)*8 ;
-		((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+1] += dither ;
+		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] += dither ;
 		dither = ((rand()%128) - 64)*8 ;
-		((uint16 *)(image[y]))[IMAGE_NSAMPLES*x+2] += dither ;
+		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] += dither ;
 	    }
 	}
     }
@@ -5080,7 +5090,7 @@ writeout:
 	if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
 	    TIFFWriteScanline(tifout,image[y],y,0) ;
 	} else if(TIF_CONFIG == PLANARCONFIG_SEPARATE) {
-	    uint16 s ;
+	    uint16_t s ;
 	    for(s = 0 ; s < SPP ; s++)
 		TIFFWriteScanline(tifout,image[y],y,s) ;
 	} else {
