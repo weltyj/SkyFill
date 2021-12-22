@@ -4119,7 +4119,7 @@ int main(int argc, char* argv[])
 	exit(1) ;
     }
 
-    uint16 input_W, input_H, BPS, SPP, TIF_CONFIG ;
+    uint32 input_W, input_H, BPS, SPP, TIF_CONFIG ;
 
     TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &input_W);
     TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &input_H);
