@@ -4119,7 +4119,8 @@ int main(int argc, char* argv[])
 	exit(1) ;
     }
 
-    uint32 input_W, input_H, BPS, SPP, TIF_CONFIG ;
+    uint32 input_W, input_H ;
+    uint16 BPS, SPP, TIF_CONFIG ;
 
     TIFFGetField(tif, TIFFTAG_IMAGEWIDTH, &input_W);
     TIFFGetField(tif, TIFFTAG_IMAGELENGTH, &input_H);
@@ -4441,7 +4442,7 @@ int main(int argc, char* argv[])
 
     for(i = 0 ; i < 10 ; i++) {
 	uint16 tag = alltags[i] ;
-	uint16 tmp ;
+	uint32 tmp ;
 
 	if(tag == TIFFTAG_IMAGEWIDTH && quick_test) {
 	    if(TIFFGetField(tif, tag, &tmp)) {
