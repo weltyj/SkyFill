@@ -4,6 +4,18 @@
 #include <malloc.h>
 #include "tiffio.h"
 
+
+// PX_WGT is for experiments only!!, not actually useful for model
+
+
+// heavy weight to samples in center of image
+//#define PX_WGT(px) (1./(.001+px*px)) 
+// heavy weight to samples at left edge of image
+//#define PX_WGT(px) (pow((.5-px),8))
+
+// normal use -- even weights for all samples
+#define PX_WGT(px) (1.f)
+
 // in case Windows MSVC, or 
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -760,7 +772,22 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 
 	float hdiff, sdiff, vdiff ;
 
-	int first_y = raw_start_of_sky[x]+10 ;  // skip first 10 pixels
+	// start looking at maximum start of sky in local area
+	int first_y = raw_start_of_sky[x] ;
+	int x0 = x-20 ;
+	if(x0 < 0) x0 = 0 ;
+	int x1 = x+20 ;
+	if(x1 > IMAGE_WIDTH-1) x1 = IMAGE_WIDTH-1 ;
+
+	for(int dx=x0 ; dx <= x1 ; dx++) {
+	    if(column_mask[dx] == 1) continue ;
+
+	    if(first_y < raw_start_of_sky[dx])
+		first_y = raw_start_of_sky[dx]  ;
+	}
+
+	first_y += 5 ;
+
 
 	//first_y = end_of_sky[x]-6 ;  // temporarily see how this looks 
 	float top_mean[3], top_var[3] ;
@@ -1187,6 +1214,7 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
     }
 }
 
+
 struct sample_point {
     float px, py ;
     float h,s,v ;
@@ -1270,10 +1298,6 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	if(column_mask[x] == 1) continue ; // don't attempt a mean sky sample inside a masked area
 	if(fix_sky_hue && x>=min_sky_hue_mask && x <= min_sky_hue_mask) continue ;
 
-	float sum_h=0. ;
-	float sum_s=0. ;
-	float sum_v=0. ;
-	float sum_n=0. ;
 	int row=0 ;
 
 	for(y=0 ; y < IMAGE_HEIGHT ; y += dy) {
@@ -1336,8 +1360,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 		sum_h_by_row[row] += h ;
 		n_h_by_row[row]++ ;
 
+		float wgt = (1.-s)*PX_WGT(px) ;
+
 		if(fix_sky_hue && (x < min_sky_hue_mask || x > max_sky_hue_mask)) {
-		    float wgt = (1.-s) ;
 		    sum_hue += h*wgt ;
 		    sum_hue_wgts += wgt ;
 		    sum_sat += s ;
@@ -1345,7 +1370,6 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 		    sum_val += v*wgt ;
 		    sum_val_wgts += wgt ;
 		} else {
-		    float wgt = (1.-s) ;
 		    sum_hue += h*wgt ;
 		    sum_hue_wgts += wgt ;
 		    sum_sat += s ;
@@ -1353,11 +1377,6 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 		    sum_val += v*wgt ;
 		    sum_val_wgts += wgt ;
 		}
-
-		sum_h += h ;
-		sum_s += s ;
-		sum_v += v ;
-		sum_n += 1.f ;
 
 		n_samples++ ;
 
@@ -1519,6 +1538,28 @@ float angle_between(struct V3D *v1, struct V3D *v2, float *dotproduct)
     // normally divide by magnitude of each vector
     // but these vectors have been already normalized so their magnitude is 1.0
     // dotproduct /= mag(v1)*mag(v2) ;
+    if(*dotproduct > 1.00001f) {
+	fprintf(stderr, "AB FATAL, dp(%f) > 1.  (%f,%f,%f) and (%f,%f,%f)\n",
+	    *dotproduct,
+	    v1->A,
+	    v1->B,
+	    v1->C,
+	    v2->A,
+	    v2->B,
+	    v2->C) ;
+	    exit(1) ;
+    }
+    if(*dotproduct < -1.00001f) {
+	fprintf(stderr, "AB FATAL, dp(%f) > 1.  (%f,%f,%f) and (%f,%f,%f)\n",
+	    *dotproduct,
+	    v1->A,
+	    v1->B,
+	    v1->C,
+	    v2->A,
+	    v2->B,
+	    v2->C) ;
+	    exit(1) ;
+    }
     if(*dotproduct > 1.f) *dotproduct=1.f ; // catch rounding error, acos(> 1.) is NAN
     if(*dotproduct < -1.f) *dotproduct=-1.f ; // catch rounding error, acos(> 1.) is NAN
 
@@ -1876,7 +1917,8 @@ float samples_error(void)
 		exit(1) ;
 	    }
 
-	    sum_err_sq += err_v*err_v ;
+	    sum_err_sq += err_v*err_v*PX_WGT(samples[i].px) ; // a test for local weighting
+	    //sum_err_sq += err_v*err_v ;
 	    sum_vhat += v_hat ;
 	}
 
@@ -1888,7 +1930,8 @@ float samples_error(void)
 	    float err_r = (samples[i].r - rhat) ;
 	    float err_g = (samples[i].g - ghat) ;
 	    float err_b = (samples[i].b - bhat) ;
-	    sum_err_sq += err_r*err_r + err_g*err_g + err_b*err_b ;
+	    sum_err_sq += (err_r*err_r + err_g*err_g + err_b*err_b)*PX_WGT(samples[i].px) ; // a test for local weighting
+	    //sum_err_sq += (err_r*err_r + err_g*err_g + err_b*err_b) ;
 	}
     }
 
@@ -2310,9 +2353,9 @@ void repair_alpha(tdata_t *image)
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    // nearest neighbor search +/- 2 pixels to find max r,g,b in area
-	    uint max_r=0 ;
-	    uint max_g=0 ;
-	    uint max_b=0 ;
+	    uint16_t max_r=0 ;
+	    uint16_t max_g=0 ;
+	    uint16_t max_b=0 ;
 	    int x0 = x-2 ; if(x0 < 0) x0 = 0 ;
 	    int y0 = y-2 ; if(y0 < 0) y0 = 0 ;
 	    int x1 = x+2 ; if(x1 > IMAGE_WIDTH-1) x1 = IMAGE_WIDTH-1 ;
@@ -2701,6 +2744,9 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
     return n_repaired ;
 }
 
+// adjust this as the number of phases change!!
+#define MAX_PHASES 10
+
 void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 {
     int x, y ;
@@ -2757,25 +2803,27 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    }
 
 	}
+    }
 
+    if(phase == 3) {
 	double rcoef[4], gcoef[4], bcoef[4] ;
 
 	fprintf(stderr, "RTOS clean up pixels on vertical edges of sky, EOS is known %d\n", end_of_sky_is_known_flag) ;
 	set_minmax_sky_values() ;
 
-	for(y = max_start_of_sky ; y >= min_start_of_sky ; y--) {
+	for(y = min_start_of_sky ; y < max_start_of_sky+1 ; y++) {
 
 	    // left to right
 	    int max_x=IMAGE_WIDTH-1 ;
 	    for(x = 0 ; x < max_x ; x++) {
 		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x+1,y) == 0) {
 		    if(column_mask[x+1] == 1) continue ;
-		    fprintf(stderr, "RTOS LR clean up x,y %d,%d\n", x,y) ;
-		    int search_width=20 ;
-		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
+		    fprintf(stderr, "RTOS LR clean up x,y %d,%d\n", x+1,y) ;
+		    int search_width=2 ;
+		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,0) ;
 
 		    if(n_repaired > 0)
-			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x, y) ;
+			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x+1, y) ;
 		}
 	    }
 
@@ -2785,16 +2833,20 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x-1,y) == 0) {
 		    if(column_mask[x-1] == 1) continue ;
 		    fprintf(stderr, "RTOS RL cleanup x,y %d,%d\n", x,y) ;
-		    int search_width=20 ;
-		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
+		    int search_width=2 ;
+		    int n_repaired = get_mean_rgb(image,x-1,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
 
 		    if(n_repaired > 0)
-			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x, y) ;
+			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x-1, y) ;
 
 		}
 	    }
 
 	}
+    }
+
+    if(phase == 4) {
+	double rcoef[4], gcoef[4], bcoef[4] ;
 
 	fprintf(stderr, "RTOS first scan for bad pixels in top 5 pixels of sky\n") ;
 
@@ -2821,7 +2873,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
     }
 
-    if(phase == 1) {
+    if(phase == 5) {
 	// fill in vertical gaps where alpha is 0, happens
 	// when there is a mask in the image that hugin used that
 	// appears on the edge
@@ -2920,6 +2972,9 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		// the search continues for the next greater values of y
 	    }
 	}
+    }
+
+    if(phase == 6) {
 
 	set_minmax_sky_values() ;
 
@@ -3035,9 +3090,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
     }
 
-    // note, there is no phase 2, just so we can break at a debug level that matches the phase
-
-    if(phase == 3) {
+    if(phase == 7) {
 	fprintf(stderr, "RTOS phase 3: fill side edges\n") ;
 	// do the side edges need to be fixed?
 	int edge_width = IMAGE_WIDTH/40 ;
@@ -3121,7 +3174,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
     }
 
-    if(phase == 4) {
+    if(phase == 8) {
 #ifdef GMR_DEBUG
 	gmr_debug = 1000 ;
 #endif
@@ -3172,7 +3225,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
     }
 
     // are there sky slopes so steep they will affect the result?
-    if(phase == 5) {
+    if(phase == 9) {
 
         // run back and forth until there is no slope too steep
 	int needs_more=1 ;
@@ -3215,7 +3268,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	}
     }
 
-    if(fill_top_of_sky == 1 && phase == 6) {
+    if(fill_top_of_sky == 1 && phase == 10) {
 	fprintf(stderr, "RTOS fill gaps to min start of sky\n") ;
 
 	for(x = 0 ; x < IMAGE_WIDTH ; x++) {
@@ -3323,7 +3376,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
     if(show_raw_prediction || estimate_only) {
 	for(x = x0 ; x <= x1 ; x++) {
 	    if(column_mask[x] == 1) continue ;
-	    int ymax = show_raw_prediction ? start_of_sky[x] : IMAGE_HEIGHT ;
+	    int ymax = show_raw_prediction ? start_of_sky[x]+1 : IMAGE_HEIGHT ;
 
 	    for(y = 0 ; y < ymax ; y++) {
 		// completely model sky color
@@ -3380,6 +3433,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
 	    predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
+	    shat *= final_saturation_factor ;
 
 	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
@@ -4536,7 +4590,7 @@ int main(int argc, char* argv[])
 		    exit(1) ;
 		}
 /*  		fprintf(stderr, "y:%d * 2 (%d) > input height %d\n", y, y*2, input_H) ;  */
-		uint r,g,b,a ;
+		uint16_t r,g,b,a ;
 		tif_get4c(image,x2,y2,r,g,b,a) ;
 		tif_set4c(image,x,y,r,g,b,a) ;
 	    }
@@ -4544,8 +4598,7 @@ int main(int argc, char* argv[])
 
     }
 
-    // input image has read, and possibly scaled by 1/2, ready for image processing
-
+    // input image is read, and possibly scaled by 1/2, ready for image processing
 
     fprintf(stderr, "repair alpha\n") ;
     repair_alpha(image) ;
@@ -4597,19 +4650,14 @@ int main(int argc, char* argv[])
 /*  	n_samples = sample_sky_points(10, 200,image,start_of_sky,end_of_sky) ;  */
     }
 
-    repair_top_of_sky(image, 1, 3) ;  // 1 means end of sky is known
-    if(debug == 3) goto writeout ;
-    repair_top_of_sky(image, 1, 4) ;  // 1 means end of sky is known
-    if(debug == 4) goto writeout ;
-    repair_top_of_sky(image, 1, 5) ;  // 1 means end of sky is known
-    if(debug == 5) goto writeout ;
-    repair_top_of_sky(image, 1, 6) ;  // 1 means end of sky is known
-    if(debug == 6) goto writeout ;
-    if(debug == 9) goto writeout ;
+    for(int phase = 3 ; phase <= MAX_PHASES ; phase++) {
+	repair_top_of_sky(image, 1, phase) ;  // 1 means end of sky is known
+	if(debug == phase) goto writeout ;
+    }
 
     if(make_sky_uniform_flag == 2) make_sky_uniform(image,make_sky_uniform_flag,0,IMAGE_WIDTH-1) ;
 
-    if(debug == 7) goto writeout ;
+    if(debug == MAX_PHASES+1) goto writeout ;
 
     fit_sky_model(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;
 
@@ -4620,6 +4668,9 @@ estimate_sky:
     estimate_sky(0,IMAGE_WIDTH-1,image,start_of_sky,end_of_sky,final_end_of_sky,depth_of_sample,h,w,feather_factor,debug,depth_of_fill,extra_feather_length) ;
 
     fprintf(stderr, "back in main\n") ;
+
+    if(show_raw_prediction || estimate_only)
+	goto writeout ;
 
     int min_sky=h ;
 
@@ -4842,85 +4893,7 @@ estimate_sky:
     }
 
 writeout:
-    if(debug == 9) {
-	// trying out new end of sky detection
-	float *obuf ;
-	obuf = (float *) calloc(IMAGE_HEIGHT, sizeof(float)) ;
-	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
-	    if(column_mask[x] == 1) continue ;
-
-	    int width=3 ;
-	    for(y = IMAGE_HEIGHT-width-1 ; y > width ; y--) {
-		float r0,g0,b0,a0 ;
-		float r1,g1,b1,a1 ;
-		r0=g0=b0=a0=0. ;
-		r1=g1=b1=a1=0. ;
-		float r,g,b ;
-
-		for(int z = y-width ; z < y ; z++) {
-		    tif_get3c(image,x,z,r,g,b) ;
-		    r0 += r ;
-		    g0 += g ;
-		    b0 += b ;
-		}
-
-		for(int z = y+1 ; z <= y+width ; z++) {
-		    tif_get3c(image,x,z,r,g,b) ;
-		    r1 += r ;
-		    g1 += g ;
-		    b1 += b ;
-		}
-
-		r0 /= (float)width ;
-		r1 /= (float)width ;
-		g0 /= (float)width ;
-		g1 /= (float)width ;
-		b0 /= (float)width ;
-		b1 /= (float)width ;
-
-		float gamma = 1./2.2 ;
-		gamma = 1. ;
-		float dr = powf(fabs(r1-r0),1./gamma) ;
-		float dg = powf(fabs(g1-g0),1./gamma) ;
-		float db = powf(fabs(b1-b0),1./gamma) ;
-/*  		float da = powf(fabs(a1-a0),1./gamma) ;  */
-
-		dr = dr + dg + db ;
-		dg = dr ;
-		db = dr ;
-/*  		dr = (g1+1.)/(r1+1.) * (float)MAX16 ;  */
-/*  		dg = dr ;  */
-/*  		db = dr ;  */
-/*  		tif_set4c(image,x,y,dr,dg,db,MAX16) ;  */
-		obuf[y] = dr ;
-	    }
-
-	    int sos = 0 ;
-	    for(y = width+1 ; y < IMAGE_HEIGHT-width-1 ; y++) {
-		if(obuf[y] > 8000) {
-		    sos = y+width ;
-		    break ;
-		}
-	    }
-
-	    int eos = 0 ;
-	    float val_tol = sky_val_tolerance/.015* 4000. ;
-	    for(y = sos+width*2 ; y < IMAGE_HEIGHT-width-1 ; y++) {
-		if(obuf[y] > val_tol) {
-		    eos = y+width-1 ;
-		    break ;
-		}
-	    }
-
-	    tif_set4c(image,x,sos-1,MAX16,0,0,MAX16) ;
-	    tif_set4c(image,x,eos+2,0,MAX16,0,MAX16) ;
-
-/*  	    for(y = IMAGE_HEIGHT-width-1 ; y > width ; y--) {  */
-/*  		tif_set4c(image,x,y,obuf[y],obuf[y],obuf[y],MAX16) ;  */
-/*  	    }  */
-	}
-	free(obuf) ;
-    } else if(debug) {
+    if(debug) {
 	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
 	    if(column_mask[x] == 1) continue ;
 
@@ -4994,7 +4967,7 @@ writeout:
 
 	float px, py ;
 	py = sun_py ;
-	for(px = -0.5 ; px < 0.51 ; px += .05) {
+	for(px = -0.5 ; px < 0.51 ; px += .5) {
 	    float gamma,theta,cos_gamma ;
 	    float vhat = F_CIE2003(px, py, &gamma, &theta, &cos_gamma) ;
 	}
