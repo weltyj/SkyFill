@@ -3451,6 +3451,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    sum_wgts += s ;
 	}
 
+#define CORRECTION_TYPE_IS_FACTOR
+#ifdef CORRECTION_TYPE_IS_FACTOR
 	if(sum_wgts == 0) {
 	    // can happen at edges
 	    hcorrect_at_x[x] = 1.f ;
@@ -3461,6 +3463,18 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    scorrect_at_x[x] = sum_s/sum_shat ;
 	    vcorrect_at_x[x] = sum_v/sum_vhat ;
 	}
+#else
+	if(sum_wgts == 0) {
+	    // can happen at edges
+	    hcorrect_at_x[x] = 0.f ;
+	    scorrect_at_x[x] = 0.f ;
+	    vcorrect_at_x[x] = 0.f ;
+	} else {
+	    hcorrect_at_x[x] = (sum_h-sum_hhat)/sum_wgts ;
+	    scorrect_at_x[x] = (sum_s-sum_shat)/sum_wgts ;
+	    vcorrect_at_x[x] = (sum_v-sum_vhat)/sum_wgts ;
+	}
+#endif
     }
 
     if(0 && allowed_sky_type == UNIFORM_CIE_SKIES) {
@@ -3495,9 +3509,15 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	float sum_h=0., sum_s=0., sum_v=0. ;
 	int n_correct = 0 ;
 
+#ifdef CORRECTION_TYPE_IS_FACTOR
 	avg_hcorrect_at_x[x] = 1. ;
 	avg_scorrect_at_x[x] = 1. ;
 	avg_vcorrect_at_x[x] = 1. ;
+#else
+	avg_hcorrect_at_x[x] = 0. ;
+	avg_scorrect_at_x[x] = 0. ;
+	avg_vcorrect_at_x[x] = 0. ;
+#endif
 
 	for(int dx=-126 ; dx < 127 ; dx++) {
 	    if(x+dx < 0 || x+dx > IMAGE_WIDTH-1) continue ;
@@ -3567,16 +3587,28 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 /*  		    fprintf(stderr, "sun est x,y:%d,%d, x0,x1:%d,%d px0, px1 %f,%f\n", x,y, x0,x1, px0, px1) ;  */
 /*  		}  */
 
+#ifdef CORRECTION_TYPE_IS_FACTOR
 		hhat *= px0*avg_hcorrect_at_x[x0] + px1*avg_hcorrect_at_x[x1] ;
 		shat *= px0*avg_scorrect_at_x[x0] + px1*avg_scorrect_at_x[x1] ;
 		vhat *= px0*avg_vcorrect_at_x[x0] + px1*avg_vcorrect_at_x[x1] ;
+#else
+		hhat += px0*avg_hcorrect_at_x[x0] + px1*avg_hcorrect_at_x[x1] ;
+		shat += px0*avg_scorrect_at_x[x0] + px1*avg_scorrect_at_x[x1] ;
+		vhat += px0*avg_vcorrect_at_x[x0] + px1*avg_vcorrect_at_x[x1] ;
+#endif
 
 		fp0 = 1. ;
 		fp1 = 1.-fp0 ;
 	    } else {
+#ifdef CORRECTION_TYPE_IS_FACTOR
 		hhat *= avg_hcorrect_at_x[x] ;
 		shat *= avg_scorrect_at_x[x] ;
 		vhat *= avg_vcorrect_at_x[x] ;
+#else
+		hhat += avg_hcorrect_at_x[x] ;
+		shat += avg_scorrect_at_x[x] ;
+		vhat += avg_vcorrect_at_x[x] ;
+#endif
 	    }
 
 	    if(vhat < 0.f) vhat=0.f ;
@@ -4882,12 +4914,28 @@ estimate_sky:
 	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
 	    if(column_mask[x] == 1) continue ;
 	    for(y = 0 ; y < raw_start_of_sky[x] ; y++) {
+		for(int ch=0 ; ch < 3 ; ch++) {
+		    float f16 = (float)(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0]) ;
+		    float dither = (float)(((rand()%128) - 64)*8) ;
+		    f16 += dither ;
+		    if(f16 < 0.0) f16 = 0.0 ;
+		    if(f16 > MAX16f-1.) f16 = MAX16f-1. ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] = (uint16_t)f16 ;
+		}
+
+#ifdef OLD
+		// red
 		int16_t dither = ((rand()%128) - 64)*8 ;
 		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] += dither ;
+
+		// green
 		dither = ((rand()%128) - 64)*8 ;
 		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] += dither ;
+
+		// blue
 		dither = ((rand()%128) - 64)*8 ;
 		((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+2] += dither ;
+#endif
 	    }
 	}
     }
