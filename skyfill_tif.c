@@ -923,7 +923,7 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 	fix_slivers-- ;
     }
 
-    if(0 && fix_edges == 1) {
+    if(fix_edges == 1) {
 	fprintf(stderr, "Fixing edges\n") ;
 
 	// eliminate long vertical edges in the sky end, which can create
@@ -2675,6 +2675,12 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	    }
 #endif
 
+	    if(x == 1721 && y == 54) {
+		fprintf(stderr, "********************************************************\n") ;
+		fprintf(stderr, "   Set pixel %d,%d to  %5d,%5d,%5d\n", x,y,(int)rhat,(int)bhat,(int)ghat) ;
+		fprintf(stderr, "********************************************************\n") ;
+	    }
+
 	    tif_set4c(image,x,y,rhat,ghat,bhat,MAX16) ;
 
 	    n_repaired++ ;
@@ -2730,7 +2736,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    int max_x=IMAGE_WIDTH-1 ;
 	    for(x = 0 ; x < max_x ; x++) {
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x+1,y) == 1) {
-		    if(column_mask[x+1] == 0) continue ;
+		    if(column_mask[x+1] == 1) continue ;
 		    fprintf(stderr, "RTOS LR fix x,y %d,%d\n", x,y) ;
 		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x+1)+3] = 0 ;
 		    max_x = x+10 ;
@@ -2742,7 +2748,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    int min_x =0 ;
 	    for(x = IMAGE_WIDTH-1 ; x > min_x ; x--) {
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x-1,y) == 1) {
-		    if(column_mask[x-1] == 0) continue ;
+		    if(column_mask[x-1] == 1) continue ;
 		    fprintf(stderr, "RTOS RL fix x,y %d,%d\n", x,y) ;
 		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x-1)+3] = 0 ;
 		    min_x = x-10 ;
@@ -2752,9 +2758,46 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
 	}
 
+	double rcoef[4], gcoef[4], bcoef[4] ;
+
+	fprintf(stderr, "RTOS clean up pixels on vertical edges of sky, EOS is known %d\n", end_of_sky_is_known_flag) ;
+	set_minmax_sky_values() ;
+
+	for(y = max_start_of_sky ; y >= min_start_of_sky ; y--) {
+
+	    // left to right
+	    int max_x=IMAGE_WIDTH-1 ;
+	    for(x = 0 ; x < max_x ; x++) {
+		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x+1,y) == 0) {
+		    if(column_mask[x+1] == 1) continue ;
+		    fprintf(stderr, "RTOS LR clean up x,y %d,%d\n", x,y) ;
+		    int search_width=20 ;
+		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
+
+		    if(n_repaired > 0)
+			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x, y) ;
+		}
+	    }
+
+	    // right to left
+	    int min_x =0 ;
+	    for(x = IMAGE_WIDTH-1 ; x > min_x ; x--) {
+		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x-1,y) == 0) {
+		    if(column_mask[x-1] == 1) continue ;
+		    fprintf(stderr, "RTOS RL cleanup x,y %d,%d\n", x,y) ;
+		    int search_width=20 ;
+		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
+
+		    if(n_repaired > 0)
+			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x, y) ;
+
+		}
+	    }
+
+	}
+
 	fprintf(stderr, "RTOS first scan for bad pixels in top 5 pixels of sky\n") ;
 
-	double rcoef[4], gcoef[4], bcoef[4] ;
 
 	// are there wrong pixels in the top 50 % of the sky?
 
@@ -4523,7 +4566,7 @@ int main(int argc, char* argv[])
     find_start_of_sky(start_of_sky,w,h,image,fix_SOS_edges) ;
 
     int fix_slivers=1 ;
-    int fix_edges=fix_SOS_edges ;
+    int fix_edges=1 ;
     find_end_of_sky(end_of_sky,start_of_sky,w,h,image,fix_edges,fix_slivers) ;
 
     repair_top_of_sky(image, 1, 1) ;  // 1-> end of sky is known, 1 means phase 1
@@ -4680,7 +4723,7 @@ estimate_sky:
 
 #define DBW 4
 #define DBH 6
-    int df_passes=2 ;
+    int filter_passes=2 ;
     {
 	// this needs to be in {}'s because the "goto writeout" isn't happy when
 	// other variables are declared in the scope between the goto and the label
@@ -4690,7 +4733,7 @@ estimate_sky:
 	//extra_feather_length=5 ;
 
 	// run a Box filter on the sky to smooth edges
-	if(df_passes > 0) {
+	if(filter_passes > 0) {
 
 	    fprintf(stderr, "main:box filter size %d X %d\n", DBW, DBH) ;
 	    int i ;
@@ -4701,9 +4744,9 @@ estimate_sky:
 	    }
 	}
 
-	while(df_passes > 0) {
+	while(filter_passes > 0) {
 	    int i ;
-	    df_passes-- ;
+	    filter_passes-- ;
 
 	    fprintf(stderr, "main:box filter\n") ;
 
@@ -4768,7 +4811,7 @@ estimate_sky:
 	    }
 
 
-	    if(df_passes == 0) {
+	    if(filter_passes == 0) {
 		for(i = 0 ; i <= max_end_of_sky ; i++) {
 		    free(output_buf[i]) ;
 		}
