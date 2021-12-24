@@ -73,7 +73,7 @@ int16_t *start_of_sky, *end_of_sky, *final_end_of_sky, *raw_start_of_sky ;  // r
 #define MIN(a,b) ( (a) < (b) ? (a) : (b) )
 #define MAX(a,b) ( (a) > (b) ? (a) : (b) )
 void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV) ;
-void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float px, float py) ;
+void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, float px, float py) ;
 
 
 // set to 1 to grid search for starting sun and horizon position
@@ -786,7 +786,7 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 		first_y = raw_start_of_sky[dx]  ;
 	}
 
-	first_y += 5 ;
+	first_y += 10 ;
 
 
 	//first_y = end_of_sky[x]-6 ;  // temporarily see how this looks 
@@ -1068,8 +1068,8 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
-	    float hhat, shat ;
-	    predict_sky_huesat_from_val(v, &hhat, &shat, px, py) ;
+	    float hhat, shat, vhat ;
+	    predict_sky_huesat_from_val(v, &hhat, &shat, &vhat, px, py) ;
 
 	    if(shat > .1) {
 		sum_s += s ;
@@ -1103,8 +1103,8 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
-	    float hhat, shat ;
-	    predict_sky_huesat_from_val(v, &hhat, &shat, px, py) ;
+	    float hhat, shat, vhat ;
+	    predict_sky_huesat_from_val(v, &hhat, &shat, &vhat, px, py) ;
 
 	    if(shat > .1) {
 		sum_s += s ;
@@ -1187,7 +1187,7 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
-	    predict_sky_huesat_from_val(v, &h, &s, px, py) ;
+	    predict_sky_huesat_from_val(v, &h, &s, &v, px, py) ;
 
 	    //compute correction factors on left and right side
 	    float h_correct_l = h_coefs_left[0] + h_coefs_left[1]*(float)y ;
@@ -1226,8 +1226,14 @@ struct sample_point *samples = NULL ;
 int n_samples_to_optimize = 0 ;
 
 int sat_prediction_method = 1 ; // 1 means predict as function of (val,val*va), 0 means just a mean value is used
+
 float S_from_V_coefs[3] = {0.5,0.,0.} ; // coefs to predict sat from value
 float H_from_V_coefs[4] = {212,0.,0.,0.} ; // coefs to predict hue from value
+
+#define FULL_RAW_HSV_MODEL
+// coefs to model sky HSV from input file sky area
+// model is H|S|V = B0 + B1*px + B2*py + B3*px*py ;
+float raw_HSV_coefs[3][4];
 
 int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 {
@@ -1403,6 +1409,58 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     hue_sky = sum_hue/sum_hue_wgts ;
     sat_sky = sum_sat/sum_sat_wgts ;
     val_sky = sum_val/sum_val_wgts ;
+
+    {
+	// Full model of HSV
+
+	// Hue
+	struct mstat m_fit = init_reg(1) ;
+	for(int i = 0 ; i < n_samples ; i++) {
+/*  	    double xv[3] = {samples[i].px,samples[i].py,samples[i].px*samples[i].py} ;  */
+	    double xv[1] = {samples[i].px} ;
+	    double y = samples[i].h ;
+	    sum_reg(&m_fit, xv, y) ;
+	}
+
+	double coefs[4] ;
+	estimate_reg(&m_fit, coefs) ;
+	raw_HSV_coefs[0][0] = coefs[0] ;
+	raw_HSV_coefs[0][1] = coefs[1] ;
+	raw_HSV_coefs[0][2] = 0. ;
+	raw_HSV_coefs[0][3] = 0. ;
+
+	// Sat
+	m_fit = init_reg(3) ;
+	for(int i = 0 ; i < n_samples ; i++) {
+	    float py = samples[i].py ;
+	    if(py < 0.51) py = 0.51 ;
+	    double ty = 1.-1./((py-.5)*10.+1.) ;
+	    double xv[3] = {samples[i].px,ty,samples[i].px*ty} ;
+	    double y = samples[i].s ;
+	    sum_reg(&m_fit, xv, y) ;
+	}
+
+	estimate_reg(&m_fit, coefs) ;
+	raw_HSV_coefs[1][0] = coefs[0] ;
+	raw_HSV_coefs[1][1] = coefs[1] ;
+	raw_HSV_coefs[1][2] = coefs[2] ;
+	raw_HSV_coefs[1][3] = coefs[3] ;
+
+	// Val
+	m_fit = init_reg(3) ;
+	for(int i = 0 ; i < n_samples ; i++) {
+	    double xv[3] = {samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
+	    double y = samples[i].v ;
+	    sum_reg(&m_fit, xv, y) ;
+	}
+
+	estimate_reg(&m_fit, coefs) ;
+	raw_HSV_coefs[2][0] = coefs[0] ;
+	raw_HSV_coefs[2][1] = coefs[1] ;
+	raw_HSV_coefs[2][2] = coefs[2] ;
+	raw_HSV_coefs[2][3] = coefs[3] ;
+    }
+
 
     S_from_V_coefs[0] = sat_sky ;
     S_from_V_coefs[1] = 0. ;
@@ -1773,25 +1831,20 @@ float find_maximum_vhat(void)
 
 float sample_based_v_correction = 1.f ; // factor to make mean v from predicted "hsv" match mean v from actual
 
-void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float px, float py)
+void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, float px, float py)
 {
 
-//    Regression 'Sat=f(Value)' from a fit based on a sky image
-//****************************************************************
-//Name           	       Theta	      StdErr	 T-stat
-//[0='B0']       	      5.7540	      0.0206	 279.70
-//[1='B1']       	    -11.8315	      0.0589	-200.80
-//[2='B2']       	      6.4355	      0.0419	 153.54
-
-/*      shat = 5.7540-11.8315*vhat+6.4355*vhat*vhat ;  */
-
+#ifdef FULL_RAW_HSV_MODEL
+    float hhat = raw_HSV_coefs[0][0] + raw_HSV_coefs[0][1]*px + raw_HSV_coefs[0][2]*py + raw_HSV_coefs[0][3]*px*py ;
+    if(py < 0.51) py = 0.51 ;
+    double ty = 1.-1./((py-.5)*10.+1.) ;
+    float shat = raw_HSV_coefs[1][0] + raw_HSV_coefs[1][1]*px + raw_HSV_coefs[1][2]*ty + raw_HSV_coefs[1][3]*px*ty ;
+    float vhat_raw = raw_HSV_coefs[2][0] + raw_HSV_coefs[2][1]*px + raw_HSV_coefs[2][2]*py + raw_HSV_coefs[2][3]*px*px ;
+    vhat = vhat_raw ;
+    if(vhat > 1.f) vhat = 1.f ;
+    if(vhat < 0.f) vhat = 0.f ;
+#else
     float shat = S_from_V_coefs[0] + S_from_V_coefs[1]*vhat + S_from_V_coefs[2]*vhat*vhat ;
-
-
-    if(shat > 1.0) shat = 1.0 ;
-    if(shat < 0.0) shat = 0.0 ;
-
-    shat *= sat_depth ;
     vhat *= sky_lum ;
 
     if(vhat > 1.f) vhat = 1.f ;
@@ -1808,9 +1861,17 @@ void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float px, flo
     float ty=1.-(float)(ay)/(float)max_end_of_sky ;
     t = 1./(ty/10.+.0001) ;
     float hhat = H_from_V_coefs[0] + H_from_V_coefs[1]*t + H_from_V_coefs[2]*t*t ;
+#endif
+
+
+    if(shat > 1.0) shat = 1.0 ;
+    if(shat < 0.0) shat = 0.0 ;
+
+    shat *= sat_depth ;
 
     *pH = hhat ;
     *pS = shat ;
+    *pV = vhat ;
 }
 
 void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
@@ -1841,7 +1902,9 @@ void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
     if(!model_is_being_fit)
 	vhat = pow(vhat, 1./final_sky_gamma) ;
 
-    predict_sky_huesat_from_val(vhat, pH, pS, px, py) ;
+    predict_sky_huesat_from_val(vhat, pH, pS, pV, px, py) ;
+    if(!model_is_being_fit)
+	vhat = *pV ;
 
     *pV = vhat * exposure_factor ;
 }
@@ -3239,6 +3302,12 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 
 	    for(x = 0 ; x < IMAGE_WIDTH-4 ; x++) {
 		int x2 = x+3 ;
+		// cannot go across masked columns
+		if(column_mask[x] == 1) continue ;
+		if(column_mask[x+1] == 1) continue ;
+		if(column_mask[x+2] == 1) continue ;
+		if(column_mask[x+3] == 1) continue ;
+
 		if(start_of_sky[x] > start_of_sky[x2]+1) {
 		    needs_more=1 ;
 		    y=start_of_sky[x] ;
@@ -3389,6 +3458,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 		predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
 		shat *= final_saturation_factor ;
 
+		predict_sky_huesat_from_val(vhat, &hhat, &shat, &vhat, px, py) ;
+
 		hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;
 
 		tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
@@ -3407,23 +3478,21 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 	// to collect correction data for this column only look 85% into the column
 	float sky_height = end_of_sky[x] - start_of_sky[x] ;
-	int feather_end_y ;
-/*  	feather_end_y = start_of_sky[x] + (int)(sky_height*.10+0.5) ;  */
-/*  	feather_end_y = start_of_sky[x] + 30 ;  */
-	feather_end_y = start_of_sky[x] + (int)(sky_height*.25+0.5) ;
 
-	if(feather_end_y > start_of_sky[x] + 10) feather_end_y = start_of_sky[x] + 10 ;
+	int feather_end_y = start_of_sky[x] + (int)(sky_height*.25+0.5) ;
 
 	if(feather_end_y > IMAGE_HEIGHT-1) feather_end_y = IMAGE_HEIGHT-1 ;
 	if(feather_end_y > end_of_sky[x]) feather_end_y = end_of_sky[x] ;
+	int feather_length = feather_end_y-start_of_sky[x]+1 ;
 
 	float sum_h=0., sum_s=0., sum_v=0. ;
 	float sum_hhat=0., sum_shat=0., sum_vhat=0. ;
 
 	float sum_wgts=0. ;
 
-	for(y = start_of_sky[x]+5 ; y < feather_end_y ; y++) {
+	for(y = start_of_sky[x] ; y < feather_end_y ; y++) {
 	    float hhat,shat,vhat ;
+	    float fp0 = compute_feather_at_y(x, y, feather_length, HALF16, feather_factor) ;
 
 	    if(xy_has_nonblack_pixel(image, x, y) == 0) continue ;
 	    sum_wgts=0. ;
@@ -3433,7 +3502,9 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
 	    predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
-	    shat *= final_saturation_factor ;
+	    shat *= 1.0 - fp0*(1.-final_saturation_factor) ;
+
+	    predict_sky_huesat_from_val(vhat, &hhat, &shat, &vhat, px, py) ;
 
 	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
@@ -3568,8 +3639,12 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 	    float hhat,shat,vhat ;
 	    predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
-
 	    shat *= final_saturation_factor ;
+
+	    predict_sky_huesat_from_val(vhat, &hhat, &shat, &vhat, px, py) ;
+	    float fpsat = 1.0 - (float)(y)/(float)start_of_sky[x] ;
+	    shat *= 1.0 - fpsat*(1.-final_saturation_factor) ;
+
 
 	    // are we at or above the sun?
 	    if(sun_py < 1. && sun_px > -0.5 && sun_px < 0.5 && py >= sun_py && fabs(px-sun_px) < py-sun_py) {
@@ -4523,8 +4598,8 @@ int main(int argc, char* argv[])
 
 
     // make signed int values for width and height
-    h = (int32)input_H ;
-    w = (int32)input_W ;
+    h = (int32_t)input_H ;
+    w = (int32_t)input_W ;
 
     if(quick_test) {
 	h /= 2 ;
@@ -4534,8 +4609,8 @@ int main(int argc, char* argv[])
     min_sky_hue_mask = fmin_sky_hue_mask*w ;
     max_sky_hue_mask = fmax_sky_hue_mask*w ;
 
-    IMAGE_HEIGHT = (int32)h ; // set global variable
-    IMAGE_WIDTH = (int32)w ; // set global variable
+    IMAGE_HEIGHT = (int32_t)h ; // set global variable
+    IMAGE_WIDTH = (int32_t)w ; // set global variable
 
     p_half_image_width = 0.5 ;
     V_zenith= P3toV3(0., 1., 0.) ;
@@ -4691,7 +4766,7 @@ int main(int argc, char* argv[])
 
     if(debug == MAX_PHASES+1) goto writeout ;
 
-    fit_sky_model(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;
+/*      fit_sky_model(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;  */
 
 estimate_sky:
     maximum_vhat = find_maximum_vhat() ;
@@ -4909,11 +4984,16 @@ estimate_sky:
 
     int dither_sky=1 ;
     if(dither_sky) {
+	fprintf(stderr, "main:dithering the sky\n") ;
 	srand(0) ;
 	/* dither sky */
 	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
 	    if(column_mask[x] == 1) continue ;
-	    for(y = 0 ; y < raw_start_of_sky[x] ; y++) {
+
+	    float sky_height = end_of_sky[x] - start_of_sky[x] ;
+	    int feather_end_y = start_of_sky[x] + (int)(sky_height*depth_of_fill+0.5) ;
+
+	    for(y = 0 ; y < feather_end_y ; y++) {
 		for(int ch=0 ; ch < 3 ; ch++) {
 		    float f16 = (float)(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0]) ;
 		    float dither = (float)(((rand()%128) - 64)*8) ;
