@@ -44,9 +44,9 @@ void lu(double coef[][ROW_N], short N)
 /*  short N ;  */
 {
     double d ;
-    short indx[MAX_N+1] ;
-    ludcmp(coef, N+1, indx, &d) ;
-    lubksb(coef, N+1, indx) ;
+    short indx[MAX_N] ;
+    ludcmp(coef, N, indx, &d) ;
+    lubksb(coef, N, indx) ;
 }
 
 void ludcmp(double a[][ROW_N], short N, short *indx, double *d)
@@ -202,7 +202,7 @@ struct mstat init_reg(int n)
 
     /** zero the coef array which will hold the sums **/
     for(row = 0 ; row <= m.N  ; row++)
-	for(col = 0 ; col <= m.N+1  ; col++)
+	for(col = 0 ; col <= m.N  ; col++)
 	    m.coef[row][col] = 0 ;
 
     return m ;
@@ -214,7 +214,7 @@ void print_reg_matrix(struct mstat *m, char *name)
     fprintf(stderr, " mstat matrix for %s\n", name) ;
 
     for(row = 0 ; row <= m->N ; row++) {
-	for(col = 0 ; col <= m->N+1 ; col++) {
+	for(col = 0 ; col <= m->N ; col++) {
 	    fprintf(stderr, " %10g", m->coef[row][col]) ;
 	}
 	fprintf(stderr, "\n") ;
@@ -224,25 +224,19 @@ void print_reg_matrix(struct mstat *m, char *name)
 
 }
 
-void sum_reg(struct mstat *m, double data[], double y)
+void sum_reg(struct mstat *m, double data[], double y, double wgt)
 {
     double row_data[MAX_N+1] ;
 
-    //fprintf(stderr, "RD  ") ;
-
-    for(i = 1 ; i <= m->N  ; i++) {
-	row_data[i] = data[i-1] ;
-	//fprintf(stderr, "  %f,", row_data[i] ) ;
+    for(i = 0 ; i < m->N  ; i++) {
+	row_data[i] = data[i] ;
     }
 
-    //fprintf(stderr, "\n") ;
-
-    row_data[m->N+1] = y ; 
-    row_data[0] = 1. ;
+    row_data[m->N] = y ; 
 
     for(row = 0 ; row <= m->N ; row++)
-	for(col = 0 ; col <= m->N+1 ; col++)
-	    m->coef[row][col] += row_data[row] * row_data[col] ;
+	for(col = 0 ; col <= m->N ; col++)
+	    m->coef[row][col] += wgt * row_data[row] * row_data[col] ;
 
 }
 
@@ -259,8 +253,8 @@ void estimate_reg(struct mstat *m, double *b)
     //fprintf(stderr, "\n") ;
     matrix_solve(m->coef, m->N) ;
 
-    for(row = 0 ; row < m->N+1 ; row++) {
-	b[row] = m->coef[row][m->N+1] ;
+    for(row = 0 ; row < m->N ; row++) {
+	b[row] = m->coef[row][m->N] ;
 	//fprintf(stderr, "est_reg B%d=%f\n", row,b[row]) ;
     }
 }

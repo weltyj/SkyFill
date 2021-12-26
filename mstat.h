@@ -9,5 +9,5 @@ struct mstat {
 
 void estimate_reg(struct mstat *, double *) ;
 struct mstat init_reg(int) ;
-void sum_reg(struct mstat *, double [], double) ;
+void sum_reg(struct mstat *, double x[], double y, double weight) ;
 void print_reg_matrix(struct mstat *m, char *name) ;
