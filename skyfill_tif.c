@@ -1045,10 +1045,10 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
     float sum_shat=0. , sum_hhat=0. ;
     int n=0, n_l=0, n_r=0 ;
 
-    struct mstat m_fit_s_l = init_reg(1) ; // will be a simple linear in y
-    struct mstat m_fit_h_l = init_reg(1) ; // will be a simple linear in y
-    struct mstat m_fit_s_r = init_reg(1) ; // will be a simple linear in y
-    struct mstat m_fit_h_r = init_reg(1) ; // will be a simple linear in y
+    struct mstat m_fit_s_l = init_reg(2) ; // will be a simple linear in y
+    struct mstat m_fit_h_l = init_reg(2) ; // will be a simple linear in y
+    struct mstat m_fit_s_r = init_reg(2) ; // will be a simple linear in y
+    struct mstat m_fit_h_r = init_reg(2) ; // will be a simple linear in y
 
     fprintf(stderr, "Repair sky hue from %d to %d\n", min_sky_hue_mask, max_sky_hue_mask) ;
 
@@ -1074,9 +1074,9 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 	    if(shat > .1) {
 		sum_s += s ;
 		sum_h += h ;
-		double xv[1] = {y} ;
-		sum_reg(&m_fit_s_l, xv, s/shat) ;
-		sum_reg(&m_fit_h_l, xv, h/hhat) ;
+		double xv[2] = {1.,y} ;
+		sum_reg(&m_fit_s_l, xv, s/shat, 1.) ;
+		sum_reg(&m_fit_h_l, xv, h/hhat, 1.) ;
 		sum_shat += shat ;
 		sum_hhat += hhat ;
 
@@ -1109,9 +1109,9 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 	    if(shat > .1) {
 		sum_s += s ;
 		sum_h += h ;
-		double xv[1] = {y} ;
-		sum_reg(&m_fit_s_r, xv, s/shat) ;
-		sum_reg(&m_fit_h_r, xv, h/hhat) ;
+		double xv[2] = {1.,y} ;
+		sum_reg(&m_fit_s_r, xv, s/shat, 1.) ;
+		sum_reg(&m_fit_h_r, xv, h/hhat, 1.) ;
 		sum_shat += shat ;
 		sum_hhat += hhat ;
 
@@ -1214,12 +1214,61 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
     }
 }
 
+float py_adjusted_for_horizon_curvature(float px, float py)
+{
+
+#define OLD_HC
+#ifdef OLD_HC
+    float tmp = 1. - fabs(horizon_curvature) ;
+    float f = 1. - tmp*tmp ;
+    // *4 -> px is only -0.5 to 0.5, we want curvature for py as if px runs -1 to 1
+    // but the user (or algorithm) considers the horizon curvature at px=0.5 
+    tmp = 1. - f*px*px*4. ; 
+    if(tmp < 0.) {
+/*  	fprintf(stderr, "FATAL: pxpy_toV3D, negative adjusted px\n") ;  */
+/*  	fprintf(stderr, "FATAL: px:%f\n", px) ;  */
+/*  	fprintf(stderr, "FATAL: py:%f\n", py) ;  */
+/*  	fprintf(stderr, "FATAL: horizon_curvature:%f\n", horizon_curvature) ;  */
+/*  	fprintf(stderr, "FATAL: f:%f\n", f) ;  */
+/*  	fprintf(stderr, "FATAL: tmp:%f\n", tmp) ;  */
+	tmp = 0. ;
+    }
+
+    float hc_py = 1. - sqrt(tmp) ;
+    if(horizon_curvature < 0.) hc_py = -hc_py ;
+
+    // hc_py is where we expect the horizon to actually be at, in image coordinates
+    // so if we find the distance between the image given py and hc_py, this will
+    // correspond to a 'py' with curvature 0.  (with some obvious issues, but should
+    // be good enough for very low curvatures
+
+    return py-hc_py ;
+#else
+
+    // bug in this somewhere, causing NAN's in F_CIE2003()
+
+    if(fabs(horizon_curvature) < .00001) {
+	return py ;
+    } else {
+	float R = (horizon_curvature*horizon_curvature+.25)/(2.*horizon_curvature) ;
+	R = fabs(R) ;
+	float hc_py = R - sqrt(R*R-px*px) ;
+
+	if(horizon_curvature > 0.) {
+	    return py-hc_py ;
+	} else {
+	    return py+hc_py ;
+	}
+    }
+#endif
+}
+
 
 struct sample_point {
     float px, py ;
     float h,s,v ;
     float v_hat ;
-    uint16_t r,g,b ;
+    uint16_t r,g,b,x,y ;
 } ;
 
 struct sample_point *samples = NULL ;
@@ -1234,6 +1283,112 @@ float H_from_V_coefs[4] = {212,0.,0.,0.} ; // coefs to predict hue from value
 // coefs to model sky HSV from input file sky area
 // model is H|S|V = B0 + B1*px + B2*py + B3*px*py ;
 float raw_HSV_coefs[3][4];
+float S_inv_coef=10. ; // coef for saturation on the inverse function
+
+static inline float h_from_pxpy(float px, float py)
+{
+    return raw_HSV_coefs[0][0] + raw_HSV_coefs[0][1]*px ;
+}
+
+static inline float ty_from_pxpy(float px, float py)
+{
+    float py_hc = py_adjusted_for_horizon_curvature(px, py) ;
+    py_hc -= horizon_py ;
+
+    float denom = (py_hc)*S_inv_coef+1. ;
+    if(denom < 0.1) py_hc = 0.1 ;
+
+    double ty = 1.-1./denom ;
+    return ty ;
+}
+
+static inline float s_from_pxpy(float px, float py)
+{
+    float ty = ty_from_pxpy(px,py) ;
+    return raw_HSV_coefs[1][0] + raw_HSV_coefs[1][1]*px + raw_HSV_coefs[1][2]*ty + raw_HSV_coefs[1][3]*px*ty ;
+}
+
+static inline float v_from_pxpy(float px, float py)
+{
+    return raw_HSV_coefs[2][0] + raw_HSV_coefs[2][1]*px + raw_HSV_coefs[2][2]*py + raw_HSV_coefs[2][3]*px*px ;
+}
+
+float fit_full_HSV_model(int n_samples)
+{
+    fprintf(stderr, "fit full HSV model, horizon_py=%f\n", horizon_py) ;
+    // Full model of HSV
+    // Hue
+    struct mstat m_fit = init_reg(2) ;
+    for(int i = 0 ; i < n_samples ; i++) {
+	double xv[2] = {1.,samples[i].px} ;
+	double y = samples[i].h ;
+	sum_reg(&m_fit, xv, y, 1.) ;
+    }
+
+    double coefs[4] ;
+    estimate_reg(&m_fit, coefs) ;
+    raw_HSV_coefs[0][0] = coefs[0] ;
+    raw_HSV_coefs[0][1] = coefs[1] ;
+    raw_HSV_coefs[0][2] = 0. ;
+    raw_HSV_coefs[0][3] = 0. ;
+
+    // Sat
+    m_fit = init_reg(4) ;
+    for(int i = 0 ; i < n_samples ; i++) {
+	float ty = ty_from_pxpy(samples[i].px,samples[i].py) ;
+	double xv[4] = {1., samples[i].px,ty,samples[i].px*ty} ;
+	double y = samples[i].s ;
+	sum_reg(&m_fit, xv, y, 1.) ;
+    }
+
+    estimate_reg(&m_fit, coefs) ;
+    raw_HSV_coefs[1][0] = coefs[0] ;
+    raw_HSV_coefs[1][1] = coefs[1] ;
+    raw_HSV_coefs[1][2] = coefs[2] ;
+    raw_HSV_coefs[1][3] = coefs[3] ;
+
+    // Val
+    m_fit = init_reg(4) ;
+    for(int i = 0 ; i < n_samples ; i++) {
+	double xv[4] = {1.,  samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
+	double y = samples[i].v ;
+	sum_reg(&m_fit, xv, y, 1.) ;
+    }
+
+    estimate_reg(&m_fit, coefs) ;
+    raw_HSV_coefs[2][0] = coefs[0] ;
+    raw_HSV_coefs[2][1] = coefs[1] ;
+    raw_HSV_coefs[2][2] = coefs[2] ;
+    raw_HSV_coefs[2][3] = coefs[3] ;
+
+    //compute combined SSE from each r,g,b component
+    float sse_r = 0. ;
+    float sse_g = 0. ;
+    float sse_b = 0. ;
+
+    for(int i = 0 ; i < n_samples ; i++) {
+	float h,s,v ;
+	h = h_from_pxpy(samples[i].px, samples[i].py) ;
+	s = s_from_pxpy(samples[i].px, samples[i].py) ;
+	v = v_from_pxpy(samples[i].px, samples[i].py) ;
+
+	float fpsat = 1.0 - (float)(samples[i].y)/(float)start_of_sky[samples[i].x] ;
+	s *= 1.0 - fpsat*(1.-final_saturation_factor) ;
+
+	uint16_t r,g,b ;
+	hsv2rgb16(h,s,v,&r,&g,&b) ;
+
+	float err_r = (float)r - (float)samples[i].r ;
+	float err_g = (float)g - (float)samples[i].g ;
+	float err_b = (float)b - (float)samples[i].b ;
+
+	sse_r += err_r*err_r ;
+	sse_g += err_g*err_g ;
+	sse_b += err_b*err_b ;
+    }
+
+    return sse_r + sse_g + sse_b ;
+}
 
 int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky)
 {
@@ -1354,6 +1509,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 
 		float h,s,v ;
 		rgb2hsv16(r,g,b,&h,&s,&v) ;
+
+		samples[n_samples].x = x ;
+		samples[n_samples].y = y ;
 		samples[n_samples].px = px ;
 		samples[n_samples].py = py ;
 		samples[n_samples].r = r ;
@@ -1410,16 +1568,44 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     sat_sky = sum_sat/sum_sat_wgts ;
     val_sky = sum_val/sum_val_wgts ;
 
-    {
+    S_inv_coef=1. ;
+    horizon_py = 1. - (float)max_end_of_sky/(float)(IMAGE_HEIGHT-1) ;
+    float sse = fit_full_HSV_model(n_samples) ;
+
+    float best_horizon_py = horizon_py ;
+    float best_S_inv_coef = S_inv_coef ;
+    float best_sse = sse;
+
+
+    for(horizon_py = horizon_py-.05 ; horizon_py > .25 ; horizon_py -= .05) {
+	for(S_inv_coef=5. ; S_inv_coef < 200.; S_inv_coef *= 2.) {
+	    sse = fit_full_HSV_model(n_samples) ;
+/*  	    fprintf(stderr, "hpy,Icoef SSE from fit_full_HSV_model is (%f,%f) = %f\n", horizon_py,S_inv_coef,sse) ;  */
+	    if(sse < best_sse) {
+		best_sse = sse ;
+		best_horizon_py = horizon_py ;
+		best_S_inv_coef = S_inv_coef ;
+	    }
+	}
+    }
+
+    // final fit
+    horizon_py = best_horizon_py ;
+    S_inv_coef = best_S_inv_coef ;
+    sse = fit_full_HSV_model(n_samples) ;
+
+    fprintf(stderr, "FINAL fit_full_HSV:  hpy,Icoef SSE from is (%f,%f) = %f\n", horizon_py,S_inv_coef,sse) ;
+
+    if(0) {
 	// Full model of HSV
 
 	// Hue
-	struct mstat m_fit = init_reg(1) ;
+	struct mstat m_fit = init_reg(2) ;
 	for(int i = 0 ; i < n_samples ; i++) {
 /*  	    double xv[3] = {samples[i].px,samples[i].py,samples[i].px*samples[i].py} ;  */
-	    double xv[1] = {samples[i].px} ;
+	    double xv[2] = {1.,samples[i].px} ;
 	    double y = samples[i].h ;
-	    sum_reg(&m_fit, xv, y) ;
+	    sum_reg(&m_fit, xv, y, 1.) ;
 	}
 
 	double coefs[4] ;
@@ -1430,14 +1616,14 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	raw_HSV_coefs[0][3] = 0. ;
 
 	// Sat
-	m_fit = init_reg(3) ;
+	m_fit = init_reg(4) ;
 	for(int i = 0 ; i < n_samples ; i++) {
 	    float py = samples[i].py ;
 	    if(py < 0.51) py = 0.51 ;
 	    double ty = 1.-1./((py-.5)*10.+1.) ;
-	    double xv[3] = {samples[i].px,ty,samples[i].px*ty} ;
+	    double xv[4] = {1., samples[i].px,ty,samples[i].px*ty} ;
 	    double y = samples[i].s ;
-	    sum_reg(&m_fit, xv, y) ;
+	    sum_reg(&m_fit, xv, y, 1.) ;
 	}
 
 	estimate_reg(&m_fit, coefs) ;
@@ -1447,11 +1633,11 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	raw_HSV_coefs[1][3] = coefs[3] ;
 
 	// Val
-	m_fit = init_reg(3) ;
+	m_fit = init_reg(4) ;
 	for(int i = 0 ; i < n_samples ; i++) {
-	    double xv[3] = {samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
+	    double xv[4] = {1., samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
 	    double y = samples[i].v ;
-	    sum_reg(&m_fit, xv, y) ;
+	    sum_reg(&m_fit, xv, y, 1.) ;
 	}
 
 	estimate_reg(&m_fit, coefs) ;
@@ -1469,12 +1655,12 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     if(sat_prediction_method == 1) {
 	// predict S and H as functions of V, given sample points
 
-	struct mstat m_fit = init_reg(2) ;
+	struct mstat m_fit = init_reg(3) ;
 
 	for(int i = 0 ; i < n_samples ; i++) {
-	    double xv[2] = {samples[i].v,samples[i].v*samples[i].v} ;
+	    double xv[3] = {1., samples[i].v,samples[i].v*samples[i].v} ;
 	    double y = samples[i].s ;
-	    sum_reg(&m_fit, xv, y) ;
+	    sum_reg(&m_fit, xv, y, 1.) ;
 	}
 
 	double coefs[3] ;
@@ -1499,7 +1685,7 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	// fit H as a function of py
 	// THIS IS NOT WORKING WELL AT ALL! 
 
-	struct mstat m_fit = init_reg(1) ;
+	struct mstat m_fit = init_reg(2) ;
 	double coefs[3] ;
 	coefs[0] = coefs[1] = coefs[2] = 0. ;
 	float max_py=0. ;
@@ -1509,9 +1695,9 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	    float ty=1.-(float)(ay)/(float)max_end_of_sky ;
 	    double t = log(ty*10.) ;
 	    t = 1./(ty/10.+.0001) ;
-	    double xv[2] = {t,t*t} ;
+	    double xv[3] = {1., t,t*t} ;
 	    double y = samples[i].h ;
-	    sum_reg(&m_fit, xv, y) ;
+	    sum_reg(&m_fit, xv, y, 1.) ;
 	}
 
 	estimate_reg(&m_fit, coefs) ;
@@ -1623,55 +1809,6 @@ float angle_between(struct V3D *v1, struct V3D *v2, float *dotproduct)
 
     float angle = acos(*dotproduct) ;
     return angle ;
-}
-
-float py_adjusted_for_horizon_curvature(float px, float py)
-{
-
-#define OLD_HC
-#ifdef OLD_HC
-    float tmp = 1. - fabs(horizon_curvature) ;
-    float f = 1. - tmp*tmp ;
-    // *4 -> px is only -0.5 to 0.5, we want curvature for py as if px runs -1 to 1
-    // but the user (or algorithm) considers the horizon curvature at px=0.5 
-    tmp = 1. - f*px*px*4. ; 
-    if(tmp < 0.) {
-/*  	fprintf(stderr, "FATAL: pxpy_toV3D, negative adjusted px\n") ;  */
-/*  	fprintf(stderr, "FATAL: px:%f\n", px) ;  */
-/*  	fprintf(stderr, "FATAL: py:%f\n", py) ;  */
-/*  	fprintf(stderr, "FATAL: horizon_curvature:%f\n", horizon_curvature) ;  */
-/*  	fprintf(stderr, "FATAL: f:%f\n", f) ;  */
-/*  	fprintf(stderr, "FATAL: tmp:%f\n", tmp) ;  */
-	tmp = 0. ;
-    }
-
-    float hc_py = 1. - sqrt(tmp) ;
-    if(horizon_curvature < 0.) hc_py = -hc_py ;
-
-    // hc_py is where we expect the horizon to actually be at, in image coordinates
-    // so if we find the distance between the image given py and hc_py, this will
-    // correspond to a 'py' with curvature 0.  (with some obvious issues, but should
-    // be good enough for very low curvatures
-
-    return py-hc_py ;
-#else
-
-    // bug in this somewhere, causing NAN's in F_CIE2003()
-
-    if(fabs(horizon_curvature) < .00001) {
-	return py ;
-    } else {
-	float R = (horizon_curvature*horizon_curvature+.25)/(2.*horizon_curvature) ;
-	R = fabs(R) ;
-	float hc_py = R - sqrt(R*R-px*px) ;
-
-	if(horizon_curvature > 0.) {
-	    return py-hc_py ;
-	} else {
-	    return py+hc_py ;
-	}
-    }
-#endif
 }
 
 struct V3D pxpy_toV3D(float px, float py) {
@@ -1835,11 +1972,9 @@ void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, fl
 {
 
 #ifdef FULL_RAW_HSV_MODEL
-    float hhat = raw_HSV_coefs[0][0] + raw_HSV_coefs[0][1]*px + raw_HSV_coefs[0][2]*py + raw_HSV_coefs[0][3]*px*py ;
-    if(py < 0.51) py = 0.51 ;
-    double ty = 1.-1./((py-.5)*10.+1.) ;
-    float shat = raw_HSV_coefs[1][0] + raw_HSV_coefs[1][1]*px + raw_HSV_coefs[1][2]*ty + raw_HSV_coefs[1][3]*px*ty ;
-    float vhat_raw = raw_HSV_coefs[2][0] + raw_HSV_coefs[2][1]*px + raw_HSV_coefs[2][2]*py + raw_HSV_coefs[2][3]*px*px ;
+    float hhat = h_from_pxpy(px, py) ;
+    float shat = s_from_pxpy(px, py) ;
+    float vhat_raw = v_from_pxpy(px, py) ;
     vhat = vhat_raw ;
     if(vhat > 1.f) vhat = 1.f ;
     if(vhat < 0.f) vhat = 0.f ;
@@ -2709,15 +2844,16 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
     struct mstat fit_struct[3] ;
 
     for(c=0 ; c < 3 ; c++) {
-	fit_struct[c] = init_reg(total_vars) ;
+	fit_struct[c] = init_reg(total_vars+1) ; // +1 for intercept
     }
 
     for(int i=0 ; i < n_points ; i++) {
 	x = x_coords[i] ;
 	y = y_coords[i] ;
 
-	double xv[3] ;
+	double xv[4] ;
 	int j=0 ;
+	{ xv[j] = 1. ; j++; }
 	if(order_x) { xv[j] = x ; j++; }
 	if(order_y) { xv[j] = y ; j++; }
 	if(order_y > 1) { xv[j] = y*y ; j++; }
@@ -2725,9 +2861,9 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	uint16_t pixel[3] ;
 	tif_get3c(image,x,y,pixel[0],pixel[1],pixel[2]) ;
 
-	sum_reg((&fit_struct[0]), xv, (double)pixel[0]) ;
-	sum_reg((&fit_struct[1]), xv, (double)pixel[1]) ;
-	sum_reg((&fit_struct[2]), xv, (double)pixel[2]) ;
+	sum_reg((&fit_struct[0]), xv, (double)pixel[0], 1.) ;
+	sum_reg((&fit_struct[1]), xv, (double)pixel[1], 1.) ;
+	sum_reg((&fit_struct[2]), xv, (double)pixel[2], 1.) ;
     }
 
     double fit_coefs[4] ;
@@ -2846,7 +2982,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    for(x = 0 ; x < max_x ; x++) {
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x+1,y) == 1) {
 		    if(column_mask[x+1] == 1) continue ;
-		    fprintf(stderr, "RTOS LR fix x,y %d,%d\n", x,y) ;
+		    if(verbose) fprintf(stderr, "RTOS LR fix x,y %d,%d\n", x,y) ;
 		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x+1)+3] = 0 ;
 		    max_x = x+10 ;
 		    if(max_x > IMAGE_WIDTH-1) max_x = IMAGE_WIDTH-1 ;
@@ -2858,7 +2994,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    for(x = IMAGE_WIDTH-1 ; x > min_x ; x--) {
 		if(xy_is_transparent(image,x,y) && xy_is_black_pixel(image,x-1,y) == 1) {
 		    if(column_mask[x-1] == 1) continue ;
-		    fprintf(stderr, "RTOS RL fix x,y %d,%d\n", x,y) ;
+		    if(verbose) fprintf(stderr, "RTOS RL fix x,y %d,%d\n", x,y) ;
 		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*(x-1)+3] = 0 ;
 		    min_x = x-10 ;
 		    if(min_x < 0) min_x = 0 ;
@@ -2881,12 +3017,12 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    for(x = 0 ; x < max_x ; x++) {
 		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x+1,y) == 0) {
 		    if(column_mask[x+1] == 1) continue ;
-		    fprintf(stderr, "RTOS LR clean up x,y %d,%d\n", x+1,y) ;
+		    if(verbose) fprintf(stderr, "RTOS LR clean up x,y %d,%d\n", x+1,y) ;
 		    int search_width=2 ;
 		    int n_repaired = get_mean_rgb(image,x,y,rcoef,gcoef,bcoef,search_width,0,1,0) ;
 
 		    if(n_repaired > 0)
-			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x+1, y) ;
+			if(verbose) fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x+1, y) ;
 		}
 	    }
 
@@ -2895,12 +3031,12 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    for(x = IMAGE_WIDTH-1 ; x > min_x ; x--) {
 		if(xy_is_transparent(image,x,y) && xy_is_transparent(image,x-1,y) == 0) {
 		    if(column_mask[x-1] == 1) continue ;
-		    fprintf(stderr, "RTOS RL cleanup x,y %d,%d\n", x,y) ;
+		    if(verbose) fprintf(stderr, "RTOS RL cleanup x,y %d,%d\n", x,y) ;
 		    int search_width=2 ;
 		    int n_repaired = get_mean_rgb(image,x-1,y,rcoef,gcoef,bcoef,search_width,0,1,1) ;
 
 		    if(n_repaired > 0)
-			fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x-1, y) ;
+			if(verbose) fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, x-1, y) ;
 
 		}
 	    }
@@ -2930,7 +3066,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 	    int n_repaired = get_mean_rgb(image,xc,yc,rcoef,gcoef,bcoef,search_width,end_of_sky_is_known_flag,1,1) ;
 
 	    if(n_repaired > 0)
-		fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, xc, yc) ;
+		if(verbose) fprintf(stderr, "Bad pixels near top of sky: Repaired %d pixel colors near %d,%d\n", n_repaired, xc, yc) ;
 	    xc++ ;
 	}
 
@@ -3006,10 +3142,10 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase)
 		    double rcoef1[4], gcoef1[4], bcoef1[4] ;
 		    int nt = get_mean_rgb(image,x,ty,rcoef0,gcoef0,bcoef0,search_width,end_of_sky_is_known_flag,1,2) ;
 		    if(nt > 0)
-			fprintf(stderr, "Repaired %d pixels near the top of the gap\n",nt) ;
+			if(verbose) fprintf(stderr, "Repaired %d pixels near the top of the gap\n",nt) ;
 		    int nb = get_mean_rgb(image,x,by,rcoef1,gcoef1,bcoef1,search_width,end_of_sky_is_known_flag,1,2) ;
 		    if(nb > 0)
-			fprintf(stderr, "Repaired %d pixels near the top of the gap\n",nb) ;
+			if(verbose) fprintf(stderr, "Repaired %d pixels near the top of the gap\n",nb) ;
 
 
 		    for(y = ty ; y <= by ; y++) {
@@ -3372,6 +3508,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 {
     int x, y ;
     fprintf(stderr, "estimate sky x:%d to %d, feather_factor=%f, nonlinear_feather=%f\n", x0,x1,feather_factor, nonlinear_feather) ;
+    dump_parameters_to_stdout() ;
 
     float sun_px = sun_x_angle2px(sun_x) ;
 
@@ -3397,7 +3534,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
     // is the sky saturation prediction not right, saturation should increases from max start of sky to y=0 ;
     {
-	struct mstat m_fit = init_reg(1) ; // will be a simple linear in y
+	struct mstat m_fit = init_reg(2) ; // will be a simple linear in y
 	for(x = x0 ; x <= x1 ; x += (x1-x0)/20) {
 	    if(column_mask[x] == 1) continue ;
 	    for(y = 0 ; y < max_start_of_sky ; y++) {
@@ -3406,8 +3543,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 		float hhat,shat,vhat ;
 		predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
-		double xv[1] = {py} ;
-		sum_reg(&m_fit, xv, shat) ;
+		double xv[2] = {1.,py} ;
+		sum_reg(&m_fit, xv, shat, 1.) ;
 	    }
 	}
 
