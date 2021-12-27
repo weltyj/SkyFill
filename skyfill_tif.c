@@ -24,6 +24,8 @@
 #include "string.h"
 #include "mstat.h"
 
+// is the sky CIE model also used?
+int uses_CIE_model=0 ;
 /* coordinate system:
 	TIF files are read.  data is stored in image[] array.  Top left is (0,0), bottom right is (width-1,height-1) ;
 */
@@ -98,8 +100,6 @@ float lowest_sky_py_found=1.0 ;  // after sky is detected, this is set
 float repair_tos_thresh=0.02 ;  // how far off a r,g, or b pixel is off from mean before it is not used in local
                                 // sky color calculation -- the get_mean_rgb() function.
 
-float sky_gamma=-1. ; // applied to the luminosity estimate from the CIE sky model, reduces intensity near sun, negative value disables
-float final_sky_gamma=1.0 ; // applied to luminosity estimate from the CIE sky model, but *AFTER* fitting has been, allows manual control of result
 int model_is_being_fit=1 ;
 
 float exposure_factor=1. ; // exposure factor
@@ -112,7 +112,7 @@ int IMAGE_HAS_ALPHA=0 ;
 
 // horizon_py is at x=0 ;
 float sun_x = 120., sun_py = .99, horizon_py = .5 ;
-float hue_horizon = 200, sat_depth = .8, sky_lum=.9 ;
+float hue_horizon = 200, sat_depth = 1.0, sky_lum=.9 ;
 
 // as determined from the sample points
 float hue_sky = 212 ;
@@ -127,7 +127,8 @@ float horizon_lift_angle_radians=0. ;
 float FOV_horizontal=120. ;
 float proportion_to_radian_factor_x ; // how many radians per proportion of full image in X dimension ?
 float proportion_to_radian_factor_y ; // how many radians per proportion of full image in Y dimension ?
-float maximum_vhat = 1. ; // maximum vhat in sky dome
+float maximum_CIE_vhat = 1. ; // maximum vhat in sky dome
+float minimum_CIE_vhat = 1. ; // minimum vhat in sky dome
 
 int max_end_of_sky = -1 ;
 int min_end_of_sky = -1 ;
@@ -149,7 +150,7 @@ float perez_D=-2.4 ; // circumsolar radius, -10 to 0
 float perez_E=-0.15 ; // backscattering effect, -1 to 5
 
 
-#define MAX_PARMS 16
+#define MAX_PARMS 15
 
 struct OPT_PARM {
     float *variable_address ;
@@ -161,23 +162,24 @@ struct OPT_PARM {
     int optimize_flag ;  // if 1, include in optimization, if 0 do not include ;
     int grid_optimize_flag ;  // if 1, include in grid search optimization, if 0 do not include ;
     char *units ;
+    int used ;
+    int is_CIE ;
 } opt_parms[MAX_PARMS] = {
-    {&sun_x, "sx", "sun_x", 0., -180., 180., 1, 1, "degrees: 0 is middle of image"}, // 0 is straight ahead, -180 or 180 is straight behind
-    {&sun_py, "sy", "sun_py", .99, 0.0, 3., 1, 1, "proportion: 0 is bottom, 1 is top"}, // 0 is bottom of image, 1 is top of image
+    {&sun_x, "sx", "sun_x", 0., -180., 180., 1, 1, "degrees: 0 is middle of image", 0, 1}, // 0 is straight ahead, -180 or 180 is straight behind
+    {&sun_py, "sy", "sun_py", .99, 0.0, 3., 1, 1, "proportion: 0 is bottom, 1 is top", 0, 1}, // 0 is bottom of image, 1 is top of image
     {&horizon_py, "hy", "horizon_py", .5, -.2, 1.5, 1, 1, "proportion: 0 is bottom, 1 is top"}, // 0 is bottom of image, 1 is top of image
-    {&horizon_curvature, "hc", "horizon curvature", 0.0, -.2,   .2, 1, 1, "proportion"},
-    {&hue_sky, "hs", "hue sky", 212., 180., 250., 1, 0, "Hue from HSV model"},
-    {&hue_horizon, "hh", "hue_horizon", 212., 180., 250., 1, 0, "Horizon hue, not currenly used"},
-    {&sat_depth, "sd", "sat_depth", .8, 0.01, 1.1, 1, 1, "Amount of saturation to apply, 0 to 1"},
-    {&sky_lum, "sl", "sky_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sky intensity"},
-    {&FOV_horizontal, "fov", "FOV_horizontal", 90., 1., 360., 1, 0, "The horizontal field of view of the image, degrees"},
-    {&perez_A, "A", "perez_A", .001, -5., 5., 1, 0, "The A parameter of the perez CIE sky model"},
-    {&perez_B, "B", "perez_B", -1., -10., -0.001, 1, 0, "The B parameter of the perez CIE sky model"},
-    {&perez_C, "C", "perez_C", 2., 0., 25., 1, 0, "The C parameter of the perez CIE sky model"},
-    {&perez_D, "D", "perez_D", -1.5, -10., -0.001, 1, 0, "The D parameter of the perez CIE sky model"},
-    {&perez_E, "E", "perez_E", 0.15, -1., 5., 1, 0, "The E parameter of the perez CIE sky model"},
-    {&sky_gamma, "sg", "sky_gamma", 1.0, 1.e-4, 1000, 1, 1, "Gamma value for sky intensity"},
-    {&exposure_factor, "ef", "exposure factor",    1.0,  0.1, 10.0, 1, 1, "Final exposure appled to sky intensity"},
+    {&horizon_curvature, "hc", "horizon curvature", 0.0, -.2,   .2, 1, 1, "proportion", 0, 0},
+    {&hue_sky, "hs", "hue sky", 212., 180., 250., 1, 0, "Hue from HSV model", 0, 0},
+    {&hue_horizon, "hh", "hue_horizon", 212., 180., 250., 1, 0, "Horizon hue, not currenly used", 0, 0},
+    {&sat_depth, "sd", "sat_depth", .8, 0.01, 1.1, 1, 1, "Amount of saturation to apply, 0 to 1", 0, 0},
+    {&sky_lum, "sl", "sky_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sky intensity", 0, 0},
+    {&FOV_horizontal, "fov", "FOV_horizontal", 90., 1., 360., 1, 0, "The horizontal field of view of the image, degrees", 0, 0},
+    {&perez_A, "A", "perez_A", .001, -5., 5., 1, 0, "The A parameter of the perez CIE sky model", 0, 1},
+    {&perez_B, "B", "perez_B", -1., -10., -0.001, 1, 0, "The B parameter of the perez CIE sky model", 0, 1},
+    {&perez_C, "C", "perez_C", 2., 0., 25., 1, 0, "The C parameter of the perez CIE sky model", 0, 1},
+    {&perez_D, "D", "perez_D", -1.5, -100., -0.001, 1, 0, "The D parameter of the perez CIE sky model", 0, 1},
+    {&perez_E, "E", "perez_E", 0.15, -1., 5., 1, 0, "The E parameter of the perez CIE sky model", 0, 1},
+    {&exposure_factor, "ef", "exposure factor",    1.0,  0.1, 10.0, 1, 1, "Final exposure appled to sky intensity", 0, 0},
     } ;
 
 // restrict CIE sky types used in optimization
@@ -261,7 +263,8 @@ void dump_parameters_to_stdout()
 	printf("%d:%12s %f\n", opt_parms[i].optimize_flag, opt_parms[i].name, *opt_parms[i].variable_address) ;
     }
 
-    printf("Maximum vhat=%f\n", maximum_vhat) ;
+    printf("Maximum CIE vhat=%f\n", maximum_CIE_vhat) ;
+    printf("Minimum CIE vhat=%f\n", minimum_CIE_vhat) ;
 
     printf("command line settings:\n  ") ;
 
@@ -1280,86 +1283,168 @@ float S_from_V_coefs[3] = {0.5,0.,0.} ; // coefs to predict sat from value
 float H_from_V_coefs[4] = {212,0.,0.,0.} ; // coefs to predict hue from value
 
 #define FULL_RAW_HSV_MODEL
+
+int full_hsv_model_level=1 ;
+
 // coefs to model sky HSV from input file sky area
 // model is H|S|V = B0 + B1*px + B2*py + B3*px*py ;
-float raw_HSV_coefs[3][4];
-float S_inv_coef=10. ; // coef for saturation on the inverse function
+struct HSV_model_coefs {
+    float raw_HSV_coefs[3][4];
+    float S_inv_coef ; // coef for saturation on the inverse function
+    } raw_hsv_coefs[2] ;
 
-static inline float h_from_pxpy(float px, float py)
+// weighting for all points when fitting model for single function for entire sky
+static inline float px_wgt_single(float px)
 {
-    return raw_HSV_coefs[0][0] + raw_HSV_coefs[0][1]*px ;
+    return 1. ;
 }
 
-static inline float ty_from_pxpy(float px, float py)
+// weighting for all points when fitting model for left half of sky
+static inline float px_wgt_left(float px)
+{
+    px *= 1.175 ;
+    px -= .25 ;
+    if(px < 0.) px = 0. ;
+    return (1.-3.*px*px+2.*px*px*px) ;
+}
+
+// weighting for all points when fitting model for right half of sky
+static inline float px_wgt_right(float px)
+{
+    px = (1.-px)*1.175 -.25;
+    if(px < 0.) px = 0. ;
+    return (1.-3.*px*px+2.*px*px*px) ;
+}
+
+
+static inline float local_h_from_pxpy(float px, float py, struct HSV_model_coefs *p)
+{
+    return p->raw_HSV_coefs[0][0] + p->raw_HSV_coefs[0][1]*px ;
+}
+
+static inline float local_ty_from_pxpy(float px, float py, struct HSV_model_coefs *p)
 {
     float py_hc = py_adjusted_for_horizon_curvature(px, py) ;
     py_hc -= horizon_py ;
 
-    float denom = (py_hc)*S_inv_coef+1. ;
+    float denom = (py_hc)*p->S_inv_coef+1. ;
     if(denom < 0.1) py_hc = 0.1 ;
 
     double ty = 1.-1./denom ;
     return ty ;
 }
 
+static inline float local_s_from_pxpy(float px, float py, struct HSV_model_coefs *p)
+{
+    float ty = local_ty_from_pxpy(px,py, p) ;
+    return p->raw_HSV_coefs[1][0] + p->raw_HSV_coefs[1][1]*px + p->raw_HSV_coefs[1][2]*ty + p->raw_HSV_coefs[1][3]*px*ty ;
+}
+
+static inline float local_v_from_pxpy(float px, float py, struct HSV_model_coefs *p)
+{
+    return p->raw_HSV_coefs[2][0] + p->raw_HSV_coefs[2][1]*px + p->raw_HSV_coefs[2][2]*py + p->raw_HSV_coefs[2][3]*px*px ;
+}
+
+#define hsv_blended(f,px,py,v) {\
+    float left_wgt = px_wgt_left(px) ;\
+    float right_wgt = px_wgt_right(px) ;\
+    float lvalue = f(px,py,&raw_hsv_coefs[0]) ;\
+    float rvalue = f(px,py,&raw_hsv_coefs[1]) ;\
+    v = (left_wgt*lvalue + right_wgt*rvalue)/(left_wgt+right_wgt) ;\
+    }
+
+
+static inline float h_from_pxpy(float px, float py)
+{
+    if(full_hsv_model_level==1)
+	return local_h_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
+
+    float h ;
+    hsv_blended(local_h_from_pxpy, px, py, h) ;
+    return h ;
+}
+
 static inline float s_from_pxpy(float px, float py)
 {
-    float ty = ty_from_pxpy(px,py) ;
-    return raw_HSV_coefs[1][0] + raw_HSV_coefs[1][1]*px + raw_HSV_coefs[1][2]*ty + raw_HSV_coefs[1][3]*px*ty ;
+    if(full_hsv_model_level==1)
+	return local_s_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
+
+    float s ;
+    hsv_blended(local_s_from_pxpy, px, py, s) ;
+    return s ;
 }
 
 static inline float v_from_pxpy(float px, float py)
 {
-    return raw_HSV_coefs[2][0] + raw_HSV_coefs[2][1]*px + raw_HSV_coefs[2][2]*py + raw_HSV_coefs[2][3]*px*px ;
+    if(full_hsv_model_level==1)
+	return local_v_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
+
+    float v ;
+    hsv_blended(local_v_from_pxpy, px, py, v) ;
+    return v ;
 }
 
-float fit_full_HSV_model(int n_samples)
+float fit_full_HSV_model(int n_samples, int location_index)
 {
-    fprintf(stderr, "fit full HSV model, horizon_py=%f\n", horizon_py) ;
+
+    //static inline float (*wgt_func)(float) ;
+    float (*wgt_func)(float) ;
+
+    if(full_hsv_model_level == 1) {
+	wgt_func = px_wgt_single ;
+    } else if(location_index == 0) {
+	wgt_func = px_wgt_left ;
+    } else {
+	wgt_func = px_wgt_right ;
+    }
+
+    struct HSV_model_coefs *p = &raw_hsv_coefs[location_index] ;
+
     // Full model of HSV
     // Hue
+
     struct mstat m_fit = init_reg(2) ;
     for(int i = 0 ; i < n_samples ; i++) {
 	double xv[2] = {1.,samples[i].px} ;
 	double y = samples[i].h ;
-	sum_reg(&m_fit, xv, y, 1.) ;
+	sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px)) ;
     }
 
     double coefs[4] ;
     estimate_reg(&m_fit, coefs) ;
-    raw_HSV_coefs[0][0] = coefs[0] ;
-    raw_HSV_coefs[0][1] = coefs[1] ;
-    raw_HSV_coefs[0][2] = 0. ;
-    raw_HSV_coefs[0][3] = 0. ;
+    p->raw_HSV_coefs[0][0] = coefs[0] ;
+    p->raw_HSV_coefs[0][1] = coefs[1] ;
+    p->raw_HSV_coefs[0][2] = 0. ;
+    p->raw_HSV_coefs[0][3] = 0. ;
 
     // Sat
     m_fit = init_reg(4) ;
     for(int i = 0 ; i < n_samples ; i++) {
-	float ty = ty_from_pxpy(samples[i].px,samples[i].py) ;
+	float ty = local_ty_from_pxpy(samples[i].px,samples[i].py,p) ;
 	double xv[4] = {1., samples[i].px,ty,samples[i].px*ty} ;
 	double y = samples[i].s ;
-	sum_reg(&m_fit, xv, y, 1.) ;
+	sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px)) ;
     }
 
     estimate_reg(&m_fit, coefs) ;
-    raw_HSV_coefs[1][0] = coefs[0] ;
-    raw_HSV_coefs[1][1] = coefs[1] ;
-    raw_HSV_coefs[1][2] = coefs[2] ;
-    raw_HSV_coefs[1][3] = coefs[3] ;
+    p->raw_HSV_coefs[1][0] = coefs[0] ;
+    p->raw_HSV_coefs[1][1] = coefs[1] ;
+    p->raw_HSV_coefs[1][2] = coefs[2] ;
+    p->raw_HSV_coefs[1][3] = coefs[3] ;
 
     // Val
     m_fit = init_reg(4) ;
     for(int i = 0 ; i < n_samples ; i++) {
 	double xv[4] = {1.,  samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
 	double y = samples[i].v ;
-	sum_reg(&m_fit, xv, y, 1.) ;
+	sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px)) ;
     }
 
     estimate_reg(&m_fit, coefs) ;
-    raw_HSV_coefs[2][0] = coefs[0] ;
-    raw_HSV_coefs[2][1] = coefs[1] ;
-    raw_HSV_coefs[2][2] = coefs[2] ;
-    raw_HSV_coefs[2][3] = coefs[3] ;
+    p->raw_HSV_coefs[2][0] = coefs[0] ;
+    p->raw_HSV_coefs[2][1] = coefs[1] ;
+    p->raw_HSV_coefs[2][2] = coefs[2] ;
+    p->raw_HSV_coefs[2][3] = coefs[3] ;
 
     //compute combined SSE from each r,g,b component
     float sse_r = 0. ;
@@ -1457,94 +1542,86 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	uint16_t r,g,b ;
 
 	if(column_mask[x] == 1) continue ; // don't attempt a mean sky sample inside a masked area
-	if(fix_sky_hue && x>=min_sky_hue_mask && x <= min_sky_hue_mask) continue ;
+	if(fix_sky_hue && x>=min_sky_hue_mask && x <= max_sky_hue_mask) continue ;
 
 	int row=0 ;
 
 	for(y=0 ; y < IMAGE_HEIGHT ; y += dy) {
 
-	    if(y >= start_of_sky[x] && y <= end_of_sky[x]) {
-		int sx, sy ;
-		int n=0 ;
-		float sum_r=0. ;
-		float sum_g=0. ;
-		float sum_b=0. ;
+	    if(y < start_of_sky[x] || y > end_of_sky[x]) continue ;
 
-		if(n_samples == max_samples) {
-		    fprintf(stderr, "ACCCK!  sample_sky_points(), too many samples\n") ;
-		    exit(0) ;
-		}
+	    int sx, sy ;
+	    int n=0 ;
+	    float sum_r=0. ;
+	    float sum_g=0. ;
+	    float sum_b=0. ;
 
-		int x0=x-2 ;
-		int x1=x+3 ;
-		int y0=y-2 ;
-		int y1=y+3 ;
-		if(x0 < 0) x0 = 0 ;
-		if(y0 < 0) y0 = 0 ;
-		if(x1 > IMAGE_WIDTH) x1 = IMAGE_WIDTH ;
-		if(y1 > IMAGE_HEIGHT) y1 = IMAGE_HEIGHT ;
+	    if(n_samples == max_samples) {
+		fprintf(stderr, "ACCCK!  sample_sky_points(), too many samples\n") ;
+		exit(0) ;
+	    }
 
-		for(sx = x0 ; sx < x1 ; sx++) {
-		    if(column_mask[x] == 1) continue ; // no sky sample from inside a masked area
-		    for(sy = y0 ; sy < y1 ; sy++) {
-			if(sy >= start_of_sky[sx] && sy <= end_of_sky[sx]) {
-			    tif_get3c(image,x,y,r,g,b) ;
+	    int x0=x-2 ;
+	    int x1=x+3 ;
+	    int y0=y-2 ;
+	    int y1=y+3 ;
+	    if(x0 < 0) x0 = 0 ;
+	    if(y0 < 0) y0 = 0 ;
+	    if(x1 > IMAGE_WIDTH) x1 = IMAGE_WIDTH ;
+	    if(y1 > IMAGE_HEIGHT) y1 = IMAGE_HEIGHT ;
 
-			    sum_r += r ;
-			    sum_g += g ;
-			    sum_b += b ;
-			    n++ ;
-			}
+	    for(sx = x0 ; sx < x1 ; sx++) {
+		if(column_mask[x] == 1) continue ; // no sky sample from inside a masked area
+		if(fix_sky_hue && sx>=min_sky_hue_mask && sx <= max_sky_hue_mask) continue ;
+
+		for(sy = y0 ; sy < y1 ; sy++) {
+		    if(sy >= start_of_sky[sx] && sy <= end_of_sky[sx]) {
+			tif_get3c(image,x,y,r,g,b) ;
+
+			sum_r += r ;
+			sum_g += g ;
+			sum_b += b ;
+			n++ ;
 		    }
 		}
-
-		if(n == 0) continue ; // n == 0 could potentially happen near edges of detected sky area
-
-		r = (uint16_t)(sum_r/(float)n) ;
-		g = (uint16_t)(sum_g/(float)n) ;
-		b = (uint16_t)(sum_b/(float)n) ;
-
-		float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
-		float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
-
-		float h,s,v ;
-		rgb2hsv16(r,g,b,&h,&s,&v) ;
-
-		samples[n_samples].x = x ;
-		samples[n_samples].y = y ;
-		samples[n_samples].px = px ;
-		samples[n_samples].py = py ;
-		samples[n_samples].r = r ;
-		samples[n_samples].g = g ;
-		samples[n_samples].b = b ;
-
-		samples[n_samples].h = h ;
-		samples[n_samples].s = s ;
-		samples[n_samples].v = v ;
-		sum_h_by_row[row] += h ;
-		n_h_by_row[row]++ ;
-
-		float wgt = (1.-s)*PX_WGT(px) ;
-
-		if(fix_sky_hue && (x < min_sky_hue_mask || x > max_sky_hue_mask)) {
-		    sum_hue += h*wgt ;
-		    sum_hue_wgts += wgt ;
-		    sum_sat += s ;
-		    sum_sat_wgts += 1.f ;
-		    sum_val += v*wgt ;
-		    sum_val_wgts += wgt ;
-		} else {
-		    sum_hue += h*wgt ;
-		    sum_hue_wgts += wgt ;
-		    sum_sat += s ;
-		    sum_sat_wgts += 1.f ;
-		    sum_val += v*wgt ;
-		    sum_val_wgts += wgt ;
-		}
-
-		n_samples++ ;
-
 	    }
+
+	    if(n == 0) continue ; // n == 0 could potentially happen near edges of detected sky area
+
+	    r = (uint16_t)(sum_r/(float)n) ;
+	    g = (uint16_t)(sum_g/(float)n) ;
+	    b = (uint16_t)(sum_b/(float)n) ;
+
+	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
+	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
+
+	    float h,s,v ;
+	    rgb2hsv16(r,g,b,&h,&s,&v) ;
+
+	    samples[n_samples].x = x ;
+	    samples[n_samples].y = y ;
+	    samples[n_samples].px = px ;
+	    samples[n_samples].py = py ;
+	    samples[n_samples].r = r ;
+	    samples[n_samples].g = g ;
+	    samples[n_samples].b = b ;
+
+	    samples[n_samples].h = h ;
+	    samples[n_samples].s = s ;
+	    samples[n_samples].v = v ;
+	    sum_h_by_row[row] += h ;
+	    n_h_by_row[row]++ ;
+
+	    float wgt = (1.-s)*PX_WGT(px) ;
+
+	    sum_hue += h*wgt ;
+	    sum_hue_wgts += wgt ;
+	    sum_sat += s ;
+	    sum_sat_wgts += 1.f ;
+	    sum_val += v*wgt ;
+	    sum_val_wgts += wgt ;
+
+	    n_samples++ ;
 
 	    row++ ; // end of y for loop now
 	}
@@ -1568,161 +1645,38 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     sat_sky = sum_sat/sum_sat_wgts ;
     val_sky = sum_val/sum_val_wgts ;
 
-    S_inv_coef=1. ;
     horizon_py = 1. - (float)max_end_of_sky/(float)(IMAGE_HEIGHT-1) ;
-    float sse = fit_full_HSV_model(n_samples) ;
 
-    float best_horizon_py = horizon_py ;
-    float best_S_inv_coef = S_inv_coef ;
-    float best_sse = sse;
+    // TODO -- horizon_py isn't found correctly now
+    for(int lr = 0 ; lr < full_hsv_model_level ; lr++) {
+	raw_hsv_coefs[lr].S_inv_coef=1. ;
+	float sse = fit_full_HSV_model(n_samples,lr) ;
 
 
-    for(horizon_py = horizon_py-.05 ; horizon_py > .25 ; horizon_py -= .05) {
-	for(S_inv_coef=5. ; S_inv_coef < 200.; S_inv_coef *= 2.) {
-	    sse = fit_full_HSV_model(n_samples) ;
-/*  	    fprintf(stderr, "hpy,Icoef SSE from fit_full_HSV_model is (%f,%f) = %f\n", horizon_py,S_inv_coef,sse) ;  */
-	    if(sse < best_sse) {
-		best_sse = sse ;
-		best_horizon_py = horizon_py ;
-		best_S_inv_coef = S_inv_coef ;
+	float best_horizon_py = horizon_py ;
+	float best_S_inv_coef = raw_hsv_coefs[lr].S_inv_coef ;
+	float best_sse = sse;
+
+
+	for(horizon_py = horizon_py-.05 ; horizon_py > .25 ; horizon_py -= .05) {
+	    for(raw_hsv_coefs[lr].S_inv_coef=5. ; raw_hsv_coefs[lr].S_inv_coef < 200.; raw_hsv_coefs[lr].S_inv_coef *= 2.) {
+		sse = fit_full_HSV_model(n_samples,lr) ;
+		if(sse < best_sse) {
+		    best_sse = sse ;
+		    best_horizon_py = horizon_py ;
+		    best_S_inv_coef = raw_hsv_coefs[lr].S_inv_coef ;
+		}
 	    }
 	}
-    }
 
-    // final fit
-    horizon_py = best_horizon_py ;
-    S_inv_coef = best_S_inv_coef ;
-    sse = fit_full_HSV_model(n_samples) ;
+	// final fit
+	horizon_py = best_horizon_py ;
+	raw_hsv_coefs[lr].S_inv_coef = best_S_inv_coef ;
+	sse = fit_full_HSV_model(n_samples,lr) ;
 
-    fprintf(stderr, "FINAL fit_full_HSV:  hpy,Icoef SSE from is (%f,%f) = %f\n", horizon_py,S_inv_coef,sse) ;
-
-    if(0) {
-	// Full model of HSV
-
-	// Hue
-	struct mstat m_fit = init_reg(2) ;
-	for(int i = 0 ; i < n_samples ; i++) {
-/*  	    double xv[3] = {samples[i].px,samples[i].py,samples[i].px*samples[i].py} ;  */
-	    double xv[2] = {1.,samples[i].px} ;
-	    double y = samples[i].h ;
-	    sum_reg(&m_fit, xv, y, 1.) ;
-	}
-
-	double coefs[4] ;
-	estimate_reg(&m_fit, coefs) ;
-	raw_HSV_coefs[0][0] = coefs[0] ;
-	raw_HSV_coefs[0][1] = coefs[1] ;
-	raw_HSV_coefs[0][2] = 0. ;
-	raw_HSV_coefs[0][3] = 0. ;
-
-	// Sat
-	m_fit = init_reg(4) ;
-	for(int i = 0 ; i < n_samples ; i++) {
-	    float py = samples[i].py ;
-	    if(py < 0.51) py = 0.51 ;
-	    double ty = 1.-1./((py-.5)*10.+1.) ;
-	    double xv[4] = {1., samples[i].px,ty,samples[i].px*ty} ;
-	    double y = samples[i].s ;
-	    sum_reg(&m_fit, xv, y, 1.) ;
-	}
-
-	estimate_reg(&m_fit, coefs) ;
-	raw_HSV_coefs[1][0] = coefs[0] ;
-	raw_HSV_coefs[1][1] = coefs[1] ;
-	raw_HSV_coefs[1][2] = coefs[2] ;
-	raw_HSV_coefs[1][3] = coefs[3] ;
-
-	// Val
-	m_fit = init_reg(4) ;
-	for(int i = 0 ; i < n_samples ; i++) {
-	    double xv[4] = {1., samples[i].px,samples[i].py,samples[i].px*samples[i].px} ;
-	    double y = samples[i].v ;
-	    sum_reg(&m_fit, xv, y, 1.) ;
-	}
-
-	estimate_reg(&m_fit, coefs) ;
-	raw_HSV_coefs[2][0] = coefs[0] ;
-	raw_HSV_coefs[2][1] = coefs[1] ;
-	raw_HSV_coefs[2][2] = coefs[2] ;
-	raw_HSV_coefs[2][3] = coefs[3] ;
-    }
-
-
-    S_from_V_coefs[0] = sat_sky ;
-    S_from_V_coefs[1] = 0. ;
-    S_from_V_coefs[2] = 0. ;
-
-    if(sat_prediction_method == 1) {
-	// predict S and H as functions of V, given sample points
-
-	struct mstat m_fit = init_reg(3) ;
-
-	for(int i = 0 ; i < n_samples ; i++) {
-	    double xv[3] = {1., samples[i].v,samples[i].v*samples[i].v} ;
-	    double y = samples[i].s ;
-	    sum_reg(&m_fit, xv, y, 1.) ;
-	}
-
-	double coefs[3] ;
-	estimate_reg(&m_fit, coefs) ;
-	S_from_V_coefs[0] = coefs[0] ;
-	S_from_V_coefs[1] = coefs[1] ;
-	S_from_V_coefs[2] = coefs[2] ;
-    }
-
-    fprintf(stderr, "Sat from v coefs %f %f %f\n",
-    S_from_V_coefs[0],
-    S_from_V_coefs[1],
-    S_from_V_coefs[2]) ;
-
-    // initially just set hue to a constant
-    H_from_V_coefs[0] = hue_sky ;
-    H_from_V_coefs[1] = 0.f ;
-    H_from_V_coefs[2] = 0.f ;
-    H_from_V_coefs[3] = 2.f ;
-
-    if(0) {
-	// fit H as a function of py
-	// THIS IS NOT WORKING WELL AT ALL! 
-
-	struct mstat m_fit = init_reg(2) ;
-	double coefs[3] ;
-	coefs[0] = coefs[1] = coefs[2] = 0. ;
-	float max_py=0. ;
-
-	for(int i = 0 ; i < n_samples ; i++) {
-	    int ay=(1.-samples[i].py)*IMAGE_HEIGHT ;
-	    float ty=1.-(float)(ay)/(float)max_end_of_sky ;
-	    double t = log(ty*10.) ;
-	    t = 1./(ty/10.+.0001) ;
-	    double xv[3] = {1., t,t*t} ;
-	    double y = samples[i].h ;
-	    sum_reg(&m_fit, xv, y, 1.) ;
-	}
-
-	estimate_reg(&m_fit, coefs) ;
-	H_from_V_coefs[0] = coefs[0] ;
-	H_from_V_coefs[1] = coefs[1] ;
-	H_from_V_coefs[2] = coefs[2] ;
-	H_from_V_coefs[3] = max_py ;
-
-	fprintf(stderr, "\n") ;
-	for(int i = 0 ; i < n_max_rows ; i++) {
-	    float mean=0. ;
-	    if(n_h_by_row[i] > 0) {
-		mean = sum_h_by_row[i]/(float)n_h_by_row[i] ;
-	    }
-
-	    float y = i*dy ;
-	    if(y > max_end_of_sky) break ;
-
-	    float ty=1.-(float)(y)/(float)max_end_of_sky ;
-	    double t = log(ty*10.) ;
-	    t = 1./(ty/10.+.0001) ;
-	    float h_hat = H_from_V_coefs[0] + H_from_V_coefs[1]*t + H_from_V_coefs[2]*t*t ;
-	    fprintf(stderr, "INFO:  Mean,pred sky hue at y,ty,t=%d,%4.2f,%8f is (%6.1f,%6.1f), n=%d\n", i*dy,ty,t, mean, h_hat, n_h_by_row[i]) ;
-	}
-	fprintf(stderr, "\n") ;
+	fprintf(stderr, "FINAL fit_full_HSV[%d of %d]:  hpy,Icoef SSE from is (%f,%f) = %f\n", lr,full_hsv_model_level,horizon_py,raw_hsv_coefs[lr].S_inv_coef,sse) ;
+	printf("raw_hsv_coefs V = %f %f %f %f\n", raw_hsv_coefs[lr].raw_HSV_coefs[2][0], raw_hsv_coefs[lr].raw_HSV_coefs[2][1],
+						  raw_hsv_coefs[lr].raw_HSV_coefs[2][2], raw_hsv_coefs[lr].raw_HSV_coefs[2][3]) ;
     }
 
     fprintf(stderr, "sample points, sky hue=%f\n", hue_sky) ;
@@ -1922,6 +1876,9 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta, float *pCos_ga
 
     float L = (1.+perez_A*exp(perez_B/cos(*pTheta)))*(1.+perez_C*(exp(perez_D*(*pGamma))-exp(perez_D*M_PI/2.)) + perez_E*(*pCos_gamma)*(*pCos_gamma)) ;
 
+    // reduced model, only adds direct glow from sun
+/*      float L = (1.+perez_C*(exp(perez_D*(*pGamma))-exp(perez_D*M_PI/2.)) + perez_E*(*pCos_gamma)*(*pCos_gamma)) ;  */
+
     if(isnan(L)) {
 	fprintf(stderr, "NAN in F_CIE2003, sun_x=%f sun_py=%f px=%f py=%f horizon_py=%f theta=%f gamma=%f\n",
 	    sun_x, sun_py, px, py, horizon_py, *pTheta, *pGamma) ;
@@ -1940,13 +1897,14 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta, float *pCos_ga
     return L ;
 }
 
-float find_maximum_vhat(void)
+float find_maximum_CIE_vhat(void)
 {
     float gamma,theta,cos_gamma ;
     float px, py ;
 
     float sun_px = sun_x_angle2px(sun_x) ;
     float max_vhat = 0. ;
+    minimum_CIE_vhat = 1.e30 ;
 
     if(sun_px >= -0.5 && sun_px <= 0.5 && sun_py >= 0.0 && sun_py <= 1.0) {
 	// if the sun is in the image, get vhat directly at the sun
@@ -1958,45 +1916,42 @@ float find_maximum_vhat(void)
 	for(py = 0.f ; py < 1.001f ; py += .05f) {
 	    float vhat_here = F_CIE2003(px, py, &gamma, &theta, &cos_gamma) ;
 	    if(vhat_here > max_vhat) max_vhat = vhat_here ;
+	    if(vhat_here < minimum_CIE_vhat) minimum_CIE_vhat = vhat_here ;
 	}
     }
-
-    if(max_vhat < 1.0f) max_vhat = 1.0f ;
 
     return max_vhat ;
 }
 
 float sample_based_v_correction = 1.f ; // factor to make mean v from predicted "hsv" match mean v from actual
 
-void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, float px, float py)
+void predict_sky_huesat_from_val(float vhat_CIE_sun, float *pH, float *pS, float *pV, float px, float py)
 {
 
-#ifdef FULL_RAW_HSV_MODEL
+    float vhat_final ;
+
     float hhat = h_from_pxpy(px, py) ;
     float shat = s_from_pxpy(px, py) ;
     float vhat_raw = v_from_pxpy(px, py) ;
-    vhat = vhat_raw ;
-    if(vhat > 1.f) vhat = 1.f ;
-    if(vhat < 0.f) vhat = 0.f ;
-#else
-    float shat = S_from_V_coefs[0] + S_from_V_coefs[1]*vhat + S_from_V_coefs[2]*vhat*vhat ;
-    vhat *= sky_lum ;
 
-    if(vhat > 1.f) vhat = 1.f ;
-    if(vhat < 0.f) vhat = 0.f ;
+    if(uses_CIE_model) {
+	if(vhat_raw > vhat_CIE_sun)
+	    vhat_final = vhat_raw ;
+	else
+	    vhat_final = vhat_CIE_sun ;
 
-    double t ;
-    if(py > H_from_V_coefs[3]) {
-	t = log(H_from_V_coefs[3]) ;
+	float vhat_add = vhat_CIE_sun- minimum_CIE_vhat/maximum_CIE_vhat ;
+	if(vhat_add < 0.0) vhat_add = 0.0 ;
+	vhat_final = vhat_add + vhat_raw ;
+
+/*  	vhat_final = vhat_CIE_sun ;  */
+
     } else {
-	t = log(py) ;
+	vhat_final = vhat_raw ;
     }
 
-    int ay=(1.-py)*IMAGE_HEIGHT ;
-    float ty=1.-(float)(ay)/(float)max_end_of_sky ;
-    t = 1./(ty/10.+.0001) ;
-    float hhat = H_from_V_coefs[0] + H_from_V_coefs[1]*t + H_from_V_coefs[2]*t*t ;
-#endif
+    if(vhat_final > 1.f) vhat_final = 1.f ;
+    if(vhat_final < 0.f) vhat_final = 0.f ;
 
 
     if(shat > 1.0) shat = 1.0 ;
@@ -2006,42 +1961,32 @@ void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, fl
 
     *pH = hhat ;
     *pS = shat ;
-    *pV = vhat ;
+    *pV = vhat_final ;
 }
 
 void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV)
 {
-    float vhat ;
+    float vhat_sun = 0. ;
 
     float gamma ; // angle between view and sun vector
     float theta ; // angle between view and zenith vector
     float cos_gamma ;
 
-    vhat = F_CIE2003(px, py, &gamma, &theta, &cos_gamma)/maximum_vhat ;
+    if(uses_CIE_model) {
+	vhat_sun = F_CIE2003(px, py, &gamma, &theta, &cos_gamma)/maximum_CIE_vhat ;
 
-    if(vhat > 1.f) vhat = 1.f ;
-    if(vhat < 0.f) vhat = 0.f ;
+	if(vhat_sun < 0.) {
+/*  	    fprintf(stderr, "WARNING: F_CIE2003 returns negative vhat, fixing!\n") ;  */
+	    vhat_sun = 0. ;
+	}
 
-    if(vhat < 0.) {
-	fprintf(stderr, "WARNING: F_CIE2003 returns negative vhat, fixing!\n") ;
-	vhat = 0. ;
+	if(vhat_sun > 1.f) vhat_sun = 1.f ;
+	if(vhat_sun < 0.f) vhat_sun = 0.f ;
     }
 
-    if(sky_gamma > 1.e-10)
-	vhat *= (1.-pow(fabs(cos_gamma),1./sky_gamma)) ;
+    predict_sky_huesat_from_val(vhat_sun, pH, pS, pV, px, py) ;
 
-    //vhat = pow(vhat, 1./sky_gamma) ;
-
-    vhat *= sample_based_v_correction ; // factor to make mean v from predicted "hsv" match mean v from actual, was computed during fits
-
-    if(!model_is_being_fit)
-	vhat = pow(vhat, 1./final_sky_gamma) ;
-
-    predict_sky_huesat_from_val(vhat, pH, pS, pV, px, py) ;
-    if(!model_is_being_fit)
-	vhat = *pV ;
-
-    *pV = vhat * exposure_factor ;
+    *pV *= exposure_factor ;
 }
 
 void predict_sky_color(float px, float py, uint16_t *rhat, uint16_t *ghat, uint16_t*bhat)
@@ -2072,10 +2017,10 @@ float samples_error(void)
 
     V_sun= image_relative_pixel_to_V3_noclip(sun_x_angle2px(sun_x), sun_py) ;
 
-    maximum_vhat = find_maximum_vhat() ;
+    maximum_CIE_vhat = find_maximum_CIE_vhat() ;
 
-    if(isinf(maximum_vhat)) {
-	fprintf(stderr, "maximum_vhat is NAN in grid optimize: sun_x:%f sun_py%f\n", sun_x, sun_py) ;
+    if(isinf(maximum_CIE_vhat)) {
+	fprintf(stderr, "maximum_CIE_vhat is NAN in grid optimize: sun_x:%f sun_py%f\n", sun_x, sun_py) ;
 	exit(1) ;
     }
 
@@ -3517,7 +3462,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
     V_sun= image_relative_pixel_to_V3(sun_x_angle2px(sun_x), sun_py) ;
 
-    maximum_vhat = find_maximum_vhat() ;
+    maximum_CIE_vhat = find_maximum_CIE_vhat() ;
 
     float *vcorrect_at_x, *hcorrect_at_x, *scorrect_at_x ;
     float *avg_vcorrect_at_x, *avg_hcorrect_at_x, *avg_scorrect_at_x ;
@@ -3599,7 +3544,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 		hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;
 
-		tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
+		tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16);
 	    }
 
 	}
@@ -3784,9 +3729,10 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 
 	    // are we at or above the sun?
-	    if(sun_py < 1. && sun_px > -0.5 && sun_px < 0.5 && py >= sun_py && fabs(px-sun_px) < py-sun_py) {
+/*  	    if(sun_py < 1. && sun_px > -0.5 && sun_px < 0.5 && py >= sun_py && fabs(px-sun_px) < py-sun_py) {  */
+	    if(0) {
 		float px_dist = (py-sun_py) ;
-		float fdist_from_center = fabs(px-sun_px)/(py-sun_py) ;
+/*  		float fdist_from_center = fabs(px-sun_px)/(py-sun_py) ;  */
 
 		// x0, x1 are left and right extents where we want to
 		// modify values more directly 
@@ -3998,6 +3944,202 @@ void make_sky_uniform(tdata_t *image, int flag, int x0, int x1)
 	for(int x = x0 ; x <= x1 ; x++) {
 	    start_of_sky[x] = y0 ;
 	}
+    }
+}
+
+void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_PARMS+1], int n_samples)
+{
+    model_is_being_fit=1 ;
+
+    // limit high value of horizon_py
+    opt_parms[2].hi = ((float)(IMAGE_HEIGHT)-(float)max_end_of_sky)/(float)IMAGE_HEIGHT ;
+
+    if(force_grid_optimization || n_custom_optimizations == 0) {
+
+
+	// default case, do a grid search for sun position
+	float best_horizon_py ;
+	float best_s_x ;
+	float best_s_y ;
+	float best_err=FMAX ;
+	int n_tot = 0 ;
+	float sun_dx = 1.e30 ;
+	float sun_dy = 1.e30 ;
+	float horizon_dy = 1.e30 ;
+	opt_parms[0].lo = -180. ;
+	opt_parms[0].hi = 180. ;
+	opt_parms[1].lo = 0. ;
+	opt_parms[1].hi = 1.5 ;
+	opt_parms[2].hi = 1. ;
+
+	fprintf(stderr, "1  Sunx,suny,horz_y=%f,%f,%f\n", sun_x, sun_py, horizon_py) ;
+
+	if(opt_parms[0].grid_optimize_flag == 1) {
+	    sun_x=opt_parms[0].lo ;
+	    sun_dx = 10. ;
+	    fprintf(stderr, "Grid optimize sun_x\n") ;
+	}
+	if(opt_parms[1].grid_optimize_flag == 1) {
+	    sun_py=opt_parms[1].lo ;
+	    sun_dy = .5 ;
+	    fprintf(stderr, "Grid optimize sun_py\n") ;
+	}
+
+	if(opt_parms[2].grid_optimize_flag == 1) {
+	    horizon_py = find_horizon_py(n_samples) ;
+	    // now, horizon_curvature is also set
+
+	    // if(n_custom_optimizations == 0) goto estimate_sky ;
+	    //horizon_py=opt_parms[2].lo ;
+	    //horizon_dy = .1 ;
+	    fprintf(stderr, "Grid optimize horizon_py found is %f\n",horizon_py) ;
+	}
+
+	float start_sun_x = sun_x ;
+	float start_sun_py = sun_py ;
+	float start_horizon_py = horizon_py ;
+
+	fprintf(stderr, "Grid optimize sun_x from %f to %f by %f\n", start_sun_x, opt_parms[0].hi, sun_dx) ;
+	fprintf(stderr, "Grid optimize sun_py from %f to %f by %f\n", start_sun_py, opt_parms[1].hi, sun_dy) ;
+	fprintf(stderr, "Grid optimize horizon_py from %f to %f by %f\n", start_horizon_py, opt_parms[2].hi, horizon_dy) ;
+
+#define FTOL .0001
+	for(sun_x=start_sun_x; sun_x < opt_parms[0].hi+FTOL ; sun_x += sun_dx) {
+	    for(sun_py=start_sun_py; sun_py < opt_parms[1].hi+FTOL ; sun_py += sun_dy) {
+		for(horizon_py=start_horizon_py; horizon_py < opt_parms[2].hi+FTOL ; horizon_py += horizon_dy) {
+		    //fprintf(stderr, "grid evaluations %d, sx:%f sy:%f hy:%f\n", n_tot, sun_x, sun_py, horizon_py) ;
+		    n_tot++ ;
+		}
+	    }
+	}
+
+	int i_grid_search_no=0 ;
+	fprintf(stderr, "%d grid evaluations will be done\n", n_tot) ;
+
+	for(sun_x=start_sun_x; sun_x < opt_parms[0].hi+FTOL ; sun_x += sun_dx) {
+	    for(sun_py=start_sun_py; sun_py < opt_parms[1].hi+FTOL ; sun_py += sun_dy) {
+		for(horizon_py=start_horizon_py; horizon_py < opt_parms[2].hi+FTOL ; horizon_py += horizon_dy) {
+
+		    float err = optimize_grid(n_samples,0) ;
+		    i_grid_search_no++ ;
+		    printf("Completed %d of %d grid evaluations for sun position\n", i_grid_search_no, n_tot) ;
+
+		    if(err < best_err) {
+			best_err = err ;
+			best_horizon_py = horizon_py ;
+			best_s_x = sun_x ;
+			best_s_y = sun_py ;
+		    }
+
+		}
+	    }
+	}
+
+	/* reset for best values */
+	sun_x = best_s_x ;
+	sun_py = best_s_y ;
+	horizon_py = best_horizon_py ;
+	optimize_grid(n_samples,1) ;
+
+	if(n_custom_optimizations == 0) {
+
+    //-O sx hy B C sl sg -O sx sy sl sg A D E
+
+	    char *opt0[6] ;
+	    char *opt1[7] ;
+
+	    char *opt0_a[6] = {"sx","hy","B","C","sl", "sd"} ;
+	    char *opt1_a[7] = {"sx","sy","sl","A","D", "E", "sd"} ;
+
+	    char *opt0_u[5] = {"sx","sy","hy","A","B"} ;
+	    char *opt1_u[4] = {"sx","sy","sl","B"} ;
+	    int i,j ;
+
+	    int np0, np1 ;
+
+	    if(allowed_sky_type == UNIFORM_CIE_SKIES) {
+		np0 = 5 ;
+		np1 = 4 ;
+		for(j = 0 ; j < np0 ; j++) {
+		    opt0[j] = opt0_u[j] ;
+		}
+		for(j = 0 ; j < np1 ; j++) {
+		    opt1[j] = opt1_u[j] ;
+		}
+	    } else {
+		np0 = 6 ;
+		np1 = 7 ;
+		for(j = 0 ; j < np0 ; j++) {
+		    opt0[j] = opt0_a[j] ;
+		}
+		for(j = 0 ; j < np1 ; j++) {
+		    opt1[j] = opt1_a[j] ;
+		}
+	    }
+
+
+	    int n_vars=0 ;
+	    optimization_var[n_custom_optimizations][0] = -1 ;
+
+	    for(j = 0 ; j < np0 ; j++) {
+		for(i = 0 ; i < MAX_PARMS ; i++) {
+		    if(!strcmp(opt0[j], opt_parms[i].abreviation)) {
+			if(opt_parms[i].optimize_flag == 1) {
+			    optimization_var[n_custom_optimizations][n_vars] = i ;
+			    n_vars++ ;
+			    optimization_var[n_custom_optimizations][n_vars] = -1 ;
+			}
+		    }
+		}
+	    }
+	    n_custom_optimizations++ ;
+
+	    n_vars=0 ;
+	    optimization_var[n_custom_optimizations][0] = -1 ;
+
+	    for(j = 0 ; j < np1 ; j++) {
+		for(i = 0 ; i < MAX_PARMS ; i++) {
+		    if(!strcmp(opt1[j], opt_parms[i].abreviation)) {
+			if(opt_parms[i].optimize_flag == 1) {
+			    optimization_var[n_custom_optimizations][n_vars] = i ;
+			    n_vars++ ;
+			    optimization_var[n_custom_optimizations][n_vars] = -1 ;
+			}
+		    }
+		}
+	    }
+	    n_custom_optimizations++ ;
+	    optimization_var[n_custom_optimizations][0] = -1 ;
+	}
+
+    }
+
+    {
+	// perform custom optimizations either from defaults or specified on the command line
+	int i,o ;
+
+	for(o = 0 ; o < n_custom_optimizations ; o++) {
+	    optimize_type = V_from_HSV ;
+
+	    for(i = 0 ; i < MAX_PARMS ; i++) {
+		opt_parms[i].optimize_flag=0 ;
+	    }
+
+	    for(i = 0 ; i < MAX_PARMS ; i++) {
+		int j = optimization_var[o][i] ;
+		if( j < 0) break ;
+		opt_parms[j].optimize_flag=1 ;
+		if(!strcmp(opt_parms[j].name, "sat_depth")) optimize_type = FULL_RGB ;
+		if(!strcmp(opt_parms[j].name, "hue_sky")) optimize_type = FULL_RGB ;
+		if(!strcmp(opt_parms[j].name, "hue_horizon")) optimize_type = FULL_RGB ;
+	    }
+
+	    smart_optimize(n_samples) ;
+
+	}
+
+	free(samples) ;
+
     }
 }
 
@@ -4390,6 +4532,10 @@ int main(int argc, char* argv[])
 	    snprintf(set_string, 19, "-%s", opt_parms[i].abreviation) ;
 
 	    if(!strcmp(argv[0], set_string)) {
+
+		if(opt_parms[i].is_CIE)
+		    uses_CIE_model=1 ;
+
 		*opt_parms[i].variable_address = atof(argv[1]) ;
 		opt_parms[i].grid_optimize_flag = 0 ;
 		opt_parms[i].optimize_flag = 0 ;
@@ -4416,6 +4562,10 @@ int main(int argc, char* argv[])
 		if(argv[0][0] != '-') {
 		    for(i = 0 ; i < MAX_PARMS ; i++) {
 			if(!strcmp(argv[0], opt_parms[i].abreviation)) {
+
+			    if(opt_parms[i].is_CIE)
+				uses_CIE_model=1 ;
+
 			    optimization_var[n_custom_optimizations][n_vars] = i ;
 			    n_vars++ ;
 			    optimization_var[n_custom_optimizations][n_vars] = -1 ;
@@ -4436,6 +4586,7 @@ int main(int argc, char* argv[])
 	if(!strcmp(argv[0], "-CIE")) {
 	    CIE_sky_index = atoi(argv[1]) ;
 	    set_cie_parms(CIE_sky_index-1) ;
+	    uses_CIE_model=1 ;
 	    argc -= 2 ;
 	    argv += 2 ;
 	    continue ;
@@ -4513,6 +4664,14 @@ int main(int argc, char* argv[])
 	    continue ;
 	}
 
+	if(!strcmp(argv[0], "-fhml")) {
+	    full_hsv_model_level= atoi(argv[1]) ;
+	    fprintf(stderr, "full_hsv_model_level set to %d\n", full_hsv_model_level) ;
+	    argc -= 2 ;
+	    argv += 2 ;
+	    continue ;
+	}
+
 	if(!strcmp(argv[0], "-ff")) {
 	    feather_factor = atof(argv[1]) ;
 	    argc -= 2 ;
@@ -4529,13 +4688,6 @@ int main(int argc, char* argv[])
 
 	if(!strcmp(argv[0], "-fse")) {
 	    fix_SOS_edges = atoi(argv[1]) ;
-	    argc -= 2 ;
-	    argv += 2 ;
-	    continue ;
-	}
-
-	if(!strcmp(argv[0], "-fsg")) {
-	    final_sky_gamma = atof(argv[1]) ;
 	    argc -= 2 ;
 	    argv += 2 ;
 	    continue ;
@@ -4890,6 +5042,10 @@ int main(int argc, char* argv[])
 	// mainly corrects for blown out regions where hue is messed up,
 	// ** Note, the starting hue_sky is used as estimate of actual hue
 	repair_sky_hue(image,start_of_sky,end_of_sky) ;
+
+	// resample points with corrected sky hue
+	// Not going to do this -- the sample points are already constrained to
+	// not include points in the area of the sky identified as needing hue repaired
 /*  	fix_sky_hue=0 ;  */
 /*  	n_samples = sample_sky_points(10, 200,image,start_of_sky,end_of_sky) ;  */
     }
@@ -4903,10 +5059,13 @@ int main(int argc, char* argv[])
 
     if(debug == MAX_PHASES+1) goto writeout ;
 
-/*      fit_sky_model(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;  */
+    if(uses_CIE_model) {
+/*  	fit_sky_model(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;  */
+	fit_sky_modelv2(force_grid_optimization, n_custom_optimizations, optimization_var, n_samples) ;
+    }
 
 estimate_sky:
-    maximum_vhat = find_maximum_vhat() ;
+    maximum_CIE_vhat = find_maximum_CIE_vhat() ;
     model_is_being_fit=0 ;
 
     estimate_sky(0,IMAGE_WIDTH-1,image,start_of_sky,end_of_sky,final_end_of_sky,depth_of_sample,h,w,feather_factor,debug,depth_of_fill,extra_feather_length) ;
@@ -5215,7 +5374,9 @@ writeout:
 
     fprintf(stderr, "main:save\n") ;
     fprintf(stderr, "sky detect tolerances (hsv) are %lf, %lf, %lf\n", sky_hue_tolerance, sky_sat_tolerance, sky_val_tolerance) ;
-    fprintf(stderr, "Value correction factor is %lf\n", sample_based_v_correction) ;
+    fprintf(stderr, "sample_based_v_correction is %lf\n", sample_based_v_correction) ;
+    printf("Maximum CIE vhat=%f\n", maximum_CIE_vhat) ;
+    printf("Minimum CIE vhat=%f\n", minimum_CIE_vhat) ;
 
     verbose=verbose_flag ;
 
@@ -5235,6 +5396,9 @@ writeout:
 	for(px = -0.5 ; px < 0.51 ; px += .5) {
 	    float gamma,theta,cos_gamma ;
 	    float vhat = F_CIE2003(px, py, &gamma, &theta, &cos_gamma) ;
+	    if(0) {
+		printf("vhat:%f\n", vhat) ;
+	    }
 	}
     }
 
