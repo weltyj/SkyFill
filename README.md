@@ -20,7 +20,7 @@ Dependencies:
 * exiftool
 
 TODO (Dec 27, 2021):
-. Better implementation of blending CIE sun model into the new hsv sky model
-. fix sky hue (-fsh) leaves noticeable edge in repaired area
-. The repair_top_of_sky routine is leaving the right "edge" of the sky area unfilled, and this is a logic bug (see the shoshone point example)
-. There appears to be some micro-banding of colors in some cases.   Need to track down why and fix (dithering?)
+* Better implementation of blending CIE sun model into the new hsv sky model
+* fix sky hue (-fsh) leaves noticeable edge in repaired area
+* The repair_top_of_sky routine is leaving the right "edge" of the sky area unfilled, and this is a logic bug (see the shoshone point example)
+* There appears to be some micro-banding of colors in some cases.   Need to track down why and fix (dithering?)
