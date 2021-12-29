@@ -5291,12 +5291,12 @@ estimate_sky:
 
 	    for(y = 0 ; y < feather_end_y ; y++) {
 		for(int ch=0 ; ch < 3 ; ch++) {
-		    float f16 = (float)(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0]) ;
+		    float f16 = (float)(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch]) ;
 		    float dither = (float)(((rand()%128) - 64)*8) ;
 		    f16 += dither ;
 		    if(f16 < 0.0) f16 = 0.0 ;
 		    if(f16 > MAX16f-1.) f16 = MAX16f-1. ;
-		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] = (uint16_t)f16 ;
+		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16_t)f16 ;
 		}
 
 #ifdef OLD
