@@ -29,7 +29,7 @@ USING:
   no image data.  You can aquire your image via another method but this is specifically designed for Hugin.  If you
   don't have Hugin and know the Horizontal FOV, specify it on the commandline with (-FOV <degrees>)
 
-* Run it with skyfill_tif <inputimage> <outputimage>
+* Run it with skyfill_tif *inputimage* *outputimage*
 
 Dependencies:
 
