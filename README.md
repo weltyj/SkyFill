@@ -34,6 +34,12 @@ USING:
      will trigger end of sky to be detected.
      
      ts and tv work the same but for Saturation and Value
+
+* When you run it in full sky replacement mode (-fsr).  The placement of the horizon determines the lowest part of the image
+  where any pixel replacement will occur. To see how far down in the image replacement is going to occur, run it with an undocumented
+  flag (-SRE).  The output will be grayscale down to the horizon (which may be curved).  White pixels will be fully replaced,
+  black pixels will not be replaced.  You can move the horizon line with the -hy \<p\> flag, where \<p\>=1.0 is the top of the image,
+  \<p\>=0.5 is halfway between the top and bottom...
  
 
 DEPENDENCIES:
