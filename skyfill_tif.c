@@ -83,6 +83,7 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->final_saturation_factor=1.0 ;
     pData->horizon_was_set=0 ;
     pData->sat_prediction_method=1 ;
+    pData->val_model_full = 1 ; // set to one, will use quadratic term in py for predicting sky value 
 
     pData->estimate_only=0 ;
     pData->show_raw_prediction=0 ;
@@ -133,6 +134,8 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->FOV_horizontal=120. ;
     pData->maximum_CIE_vhat = 1. ; // maximum vhat in sky dome
     pData->minimum_CIE_vhat = 0. ; // minimum vhat in sky dome
+
+    pData->value_angle_factor = 2. ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
 
     pData->max_end_of_sky = -1 ;
     pData->min_end_of_sky = -1 ;
@@ -1253,6 +1256,12 @@ int main(int argc, char* argv[])
 	    argv += 1 ;
 	    continue ;
 	}
+	if(!strcmp(argv[0], "-vm")) {
+	    pData->val_model_full = atoi(argv[1]) ;
+	    argc -= 2 ;
+	    argv += 2 ;
+	    continue ;
+	}
 	usage("Unknown option", argv[0]) ;
     }
 
@@ -1636,8 +1645,10 @@ estimate_sky:
 
 #define DBW 4
 #define DBH 6
-    int filter_passes=2 ;
-    {
+
+    if(pData->full_sky_replacement==0) {
+	int filter_passes=2 ;
+
 	// this needs to be in {}'s because the "goto writeout" isn't happy when
 	// other variables are declared in the scope between the goto and the label
 	uint16_t **output_buf = (uint16_t **) calloc(IMAGE_HEIGHT, sizeof(uint16_t *)) ;

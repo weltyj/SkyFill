@@ -126,24 +126,42 @@ float fit_full_HSV_model(int n_samples, int location_index, int calc_error, SKYF
     p->raw_HSV_coefs[0][3] = 0. ;
 
     // Sat
-    // No longer done in this module, have switch to a nonlinear function
+    // No longer done in this module, have switched to a nonlinear function
 
     // Val
-    m_fit = init_reg(4) ;
-    for(int i = 0 ; i < n_samples ; i++) {
-	float py_hc = py_adjusted_for_horizon_curvature(samples[i].px, samples[i].py) ;
-	float horz_angle = pData->FOV_horizontal*samples[i].px*M_PI/180. ;
-/*  	double xv[4] = {1.,  samples[i].px,py_hc,py_hc*py_hc} ;  */
-	double xv[4] = {1.,  cos(2.*horz_angle),sin(2.*horz_angle),py_hc} ;
-	double y = samples[i].v ;
-	sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px, samples[i].abs_v_error[location_index])) ;
-    }
+    if(pData->val_model_full) {
+	m_fit = init_reg(5) ;
+	for(int i = 0 ; i < n_samples ; i++) {
+	    float py_hc = py_adjusted_for_horizon_curvature(samples[i].px, samples[i].py) ;
+	    float x_mapped = pData->FOV_horizontal*samples[i].px*M_PI/180.*pData->value_angle_factor ;
+	    double xv[5] = {1.,  cos(x_mapped),sin(x_mapped),py_hc,py_hc*py_hc} ;
+	    double y = samples[i].v ;
+	    sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px, samples[i].abs_v_error[location_index])) ;
+	}
 
-    estimate_reg(&m_fit, coefs) ;
-    p->raw_HSV_coefs[2][0] = coefs[0] ;
-    p->raw_HSV_coefs[2][1] = coefs[1] ;
-    p->raw_HSV_coefs[2][2] = coefs[2] ;
-    p->raw_HSV_coefs[2][3] = coefs[3] ;
+	estimate_reg(&m_fit, coefs) ;
+	p->raw_HSV_coefs[2][0] = coefs[0] ;
+	p->raw_HSV_coefs[2][1] = coefs[1] ;
+	p->raw_HSV_coefs[2][2] = coefs[2] ;
+	p->raw_HSV_coefs[2][3] = coefs[3] ;
+	p->raw_HSV_coefs[2][4] = coefs[4] ;
+    } else {
+	m_fit = init_reg(4) ;
+	for(int i = 0 ; i < n_samples ; i++) {
+	    float py_hc = py_adjusted_for_horizon_curvature(samples[i].px, samples[i].py) ;
+	    float x_mapped = pData->FOV_horizontal*samples[i].px*M_PI/180.*pData->value_angle_factor ;
+	    double xv[4] = {1.,  cos(x_mapped),sin(x_mapped),py_hc} ;
+	    double y = samples[i].v ;
+	    sum_reg(&m_fit, xv, y, (*wgt_func)(samples[i].px, samples[i].abs_v_error[location_index])) ;
+	}
+
+	estimate_reg(&m_fit, coefs) ;
+	p->raw_HSV_coefs[2][0] = coefs[0] ;
+	p->raw_HSV_coefs[2][1] = coefs[1] ;
+	p->raw_HSV_coefs[2][2] = coefs[2] ;
+	p->raw_HSV_coefs[2][3] = coefs[3] ;
+	p->raw_HSV_coefs[2][4] = 0. ;
+    }
 
     //compute combined SSE from each r,g,b component
     float sse_r = 0. ;
@@ -153,9 +171,9 @@ float fit_full_HSV_model(int n_samples, int location_index, int calc_error, SKYF
     for(int i = 0 ; i < n_samples ; i++) {
 	float h,s,v ;
 	float py_hc = py_adjusted_for_horizon_curvature(samples[i].px, samples[i].py) ;
-	h = h_from_pxpy(samples[i].px, py_hc, pData->full_hsv_model_level) ;
-	s = s_from_pxpy(samples[i].px, py_hc, pData->full_hsv_model_level, pData->horizon_py) ;
-	v = v_from_pxpy(samples[i].px, py_hc, pData->full_hsv_model_level) ;
+	h = local_h_from_pxpy(samples[i].px, py_hc, &raw_hsv_coefs[location_index]) ;
+	s = local_s_from_pxpy(samples[i].px, py_hc, &raw_hsv_coefs[location_index]) ;
+	v = local_v_from_pxpy(samples[i].px, py_hc, &raw_hsv_coefs[location_index]) ;
 
 /*  	float fpsat = 1.0 - (float)(samples[i].y)/(float)pData->start_of_sky[samples[i].x] ;  */
 /*  	if(fpsat < 0.0) fpsat = 0.0 ;  */
@@ -201,12 +219,130 @@ void reset_sample_errors(int n_samples)
     }
 }
 
+void fit_sky_model(SKYFILL_DATA_t *pData, int n_samples)
+{
+
+
+
+    // a little hack -- horizon_py has not effect on the models now, so 
+    // by setting horizon_was_set to 1 it is not used in the grid search
+    pData->horizon_was_set=1 ;
+
+    if(! pData->horizon_was_set) {
+	pData->horizon_py = pData->lowest_sky_py_found-.1  ;
+    }
+
+    float starting_horizon_py = pData->horizon_py ;
+
+    float best_sse = 1.e30;
+    float best_horizon_py = pData->horizon_py ;
+    float best_horizon_curvature = pData->horizon_curvature ;
+    float best_value_angle_factor = pData->value_angle_factor ;
+
+    double coefs[5] ;
+
+    for(pData->horizon_curvature=-.1 ; pData->horizon_curvature < .101 ; pData->horizon_curvature += .02) {
+
+	for(int lr = 0 ; lr < pData->full_hsv_model_level ; lr++) {
+	    reset_sample_errors(n_samples) ;
+	    get_saturation_model(n_samples, coefs, pData, lr) ;
+
+	    raw_hsv_coefs[lr].raw_HSV_coefs[1][0] = coefs[0] ;
+	    raw_hsv_coefs[lr].raw_HSV_coefs[1][1] = coefs[1] ;
+	    raw_hsv_coefs[lr].raw_HSV_coefs[1][2] = coefs[2] ;
+	    raw_hsv_coefs[lr].raw_HSV_coefs[1][3] = coefs[3] ;
+	    raw_hsv_coefs[lr].raw_HSV_coefs[1][4] = coefs[4] ;
+	}
+
+	if(! pData->horizon_was_set) {
+
+	    for(pData->horizon_py = starting_horizon_py ; pData->horizon_py > .05 ; pData->horizon_py -= .05) {
+		reset_sample_errors(n_samples) ;
+		float best_sse_this=1.e30 ;
+
+		// iteratively reweighted least squares
+		for(int iteration=0 ; iteration < 3 ; iteration++) {
+		    float sse=0. ;
+		    for(int lr = 0 ; lr < pData->full_hsv_model_level ; lr++) {
+			sse += fit_full_HSV_model(n_samples,lr,1,pData) ;
+		    }
+		    if(sse < best_sse) {
+			best_sse = sse ;
+			best_horizon_py = pData->horizon_py ;
+			best_horizon_curvature = pData->horizon_curvature ;
+		    }
+		    if(sse < best_sse_this) {
+			best_sse_this = sse ;
+		    }
+		}
+
+		fprintf(stderr, "GRID fit_full_HSV  hpy,hcurv(%f,%f) = %f\n", pData->horizon_py,pData->horizon_curvature,best_sse_this) ;
+	    }
+
+	} else {
+
+	    for(pData->value_angle_factor = 2. ; pData->value_angle_factor < 2.1 ; pData->value_angle_factor += 1.) {
+
+		reset_sample_errors(n_samples) ;
+		float best_sse_this=1.e30 ;
+
+		// iteratively reweighted least squares
+		for(int iteration=0 ; iteration < 3 ; iteration++) {
+		    float sse=0. ;
+		    for(int lr = 0 ; lr < pData->full_hsv_model_level ; lr++) {
+			sse += fit_full_HSV_model(n_samples,lr,1,pData) ;
+		    }
+		    if(sse < best_sse) {
+			best_sse = sse ;
+			best_horizon_curvature = pData->horizon_curvature ;
+			best_value_angle_factor = pData->value_angle_factor ;
+		    }
+		    if(sse < best_sse_this) {
+			best_sse_this = sse ;
+		    }
+		}
+
+		fprintf(stderr, "GRID fit_full_HSV  vfactor,hcurv(%f,%f) = %f\n", pData->value_angle_factor,pData->horizon_curvature,best_sse_this) ;
+
+	    }
+	}
+    }
+
+    // final fit with best horizon_py and horizon_curvature
+    pData->horizon_py = best_horizon_py ;
+    pData->horizon_curvature = best_horizon_curvature ;
+    pData->value_angle_factor = best_value_angle_factor ;
+
+
+    for(int lr = 0 ; lr < pData->full_hsv_model_level ; lr++) {
+	get_saturation_model(n_samples, coefs, pData, lr) ;
+
+	raw_hsv_coefs[lr].raw_HSV_coefs[1][0] = coefs[0] ;
+	raw_hsv_coefs[lr].raw_HSV_coefs[1][1] = coefs[1] ;
+	raw_hsv_coefs[lr].raw_HSV_coefs[1][2] = coefs[2] ;
+	raw_hsv_coefs[lr].raw_HSV_coefs[1][3] = coefs[3] ;
+	raw_hsv_coefs[lr].raw_HSV_coefs[1][4] = coefs[4] ;
+
+	float sse = fit_full_HSV_model(n_samples,lr,0,pData) ; // last time through, calculate errors on points
+
+	fprintf(stderr, "FINAL fit_full_HSV[%d of %d]:  vfactor,hcurv from is (%f,%f) = %f\n", lr,pData->full_hsv_model_level,pData->value_angle_factor,pData->horizon_curvature,sse) ;
+	printf("raw_hsv_coefs S = %f %f %f %f %f\n", raw_hsv_coefs[lr].raw_HSV_coefs[1][0], raw_hsv_coefs[lr].raw_HSV_coefs[1][1],
+		raw_hsv_coefs[lr].raw_HSV_coefs[1][2], raw_hsv_coefs[lr].raw_HSV_coefs[1][3], raw_hsv_coefs[lr].raw_HSV_coefs[1][4]) ;
+	printf("raw_hsv_coefs V = %f %f %f %f\n", raw_hsv_coefs[lr].raw_HSV_coefs[2][0], raw_hsv_coefs[lr].raw_HSV_coefs[2][1],
+		raw_hsv_coefs[lr].raw_HSV_coefs[2][2], raw_hsv_coefs[lr].raw_HSV_coefs[2][3]) ;
+    }
+}
+
 int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData)
 {
     int x, y ;
     float mean_column_length ;
     float sum_column_lengths=0. ;
     int n_columns_in_sum=0 ;
+
+    // for this processing, do not consider localized sun image.
+    int save_uses_CIE_model = uses_CIE_model ;
+    uses_CIE_model = 0 ;
 
     V_sun= image_relative_pixel_to_V3_noclip(sun_x_angle2px(pData->sun_x), pData->sun_py) ;
 
@@ -389,71 +525,36 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     pData->sat_sky = sum_sat/sum_sat_wgts ;
     pData->val_sky = sum_val/sum_val_wgts ;
 
-    float best_sse = 1.e30;
-    float best_horizon_py = pData->horizon_py ;
-    float best_horizon_curvature = pData->horizon_py ;
+    fit_sky_model(pData, n_samples) ;
 
-    double coefs[5] ;
+    // is the top of the sky too dark, and the full value model used?, if so try the
+    // reduced value model
 
-#define START_S_COEF 1.
-    for(int lr = 0 ; lr < pData->full_hsv_model_level ; lr++) {
-	for(pData->horizon_curvature=-.1 ; pData->horizon_curvature < .101 ; pData->horizon_curvature += .02) {
-	    get_saturation_model(n_samples, coefs, pData, lr) ;
+    if(pData->val_model_full == 1) {
+	int n_failed=0 ;
+	for(float px = -0.5 ; px < 0.505 ; px += .01) {
+	    int x = IMAGE_RELATIVE_TO_PIXEL_X(px) ;
+	    float py_mid = IMAGE_PIXEL_Y_TO_RELATIVE(end_of_sky[x]/2.) ;
+	    float hhat_top, shat_top, vhat_top ;
+	    float hhat_mid, shat_mid, vhat_mid ;
+	    // estimate hsv, will used blended model if requested
+	    predict_sky_hsv(px, 1.0, &hhat_top, &shat_top, &vhat_top) ;
+	    predict_sky_hsv(px, py_mid, &hhat_mid, &shat_mid, &vhat_mid) ;
 
-	    raw_hsv_coefs[lr].raw_HSV_coefs[1][0] = coefs[0] ;
-	    raw_hsv_coefs[lr].raw_HSV_coefs[1][1] = coefs[1] ;
-	    raw_hsv_coefs[lr].raw_HSV_coefs[1][2] = coefs[2] ;
-	    raw_hsv_coefs[lr].raw_HSV_coefs[1][3] = coefs[3] ;
-	    raw_hsv_coefs[lr].raw_HSV_coefs[1][4] = coefs[4] ;
+	    printf("CTOS: px:%f x:%d t:%f m:%f\n", px, x, vhat_top, vhat_mid) ;
 
-	    if(! pData->horizon_was_set) {
-		for(pData->horizon_py = pData->horizon_py-.05 ; pData->horizon_py > .25 ; pData->horizon_py -= .05) {
-		    reset_sample_errors(n_samples) ;
-		    for(int iteration=0 ; iteration < 8 ; iteration++) {
-			// iteratively reweighted least squares
-			float sse = fit_full_HSV_model(n_samples,lr,1,pData) ;
-			if(sse < best_sse) {
-			    best_sse = sse ;
-			    best_horizon_py = pData->horizon_py ;
-			    best_horizon_curvature = pData->horizon_curvature ;
-			}
-		    }
-		}
-	    } else {
-		reset_sample_errors(n_samples) ;
-		for(int iteration=0 ; iteration < 8 ; iteration++) {
-		    // iteratively reweighted least squares
-		    float sse = fit_full_HSV_model(n_samples,lr,1,pData) ;
-		    if(sse < best_sse) {
-			best_sse = sse ;
-			best_horizon_curvature = pData->horizon_curvature ;
-		    }
-		}
-	    }
+	    if(vhat_top < 100./255 && vhat_top < vhat_mid) n_failed++ ;
 	}
-	// final fit
-	pData->horizon_py = best_horizon_py ;
-	pData->horizon_curvature = best_horizon_curvature ;
 
-	get_saturation_model(n_samples, coefs, pData, lr) ;
+	if(n_failed > 10) {
+	    fprintf(stderr, "\n*******************************************************************************\n") ;
+	    fprintf(stderr, "********** TOP OF SKY IS TOO DARK, changing to reduced value model  ***********\n") ;
+	    fprintf(stderr, "*******************************************************************************\n\n") ;
 
-	raw_hsv_coefs[lr].raw_HSV_coefs[1][0] = coefs[0] ;
-	raw_hsv_coefs[lr].raw_HSV_coefs[1][1] = coefs[1] ;
-	raw_hsv_coefs[lr].raw_HSV_coefs[1][2] = coefs[2] ;
-	raw_hsv_coefs[lr].raw_HSV_coefs[1][3] = coefs[3] ;
-	raw_hsv_coefs[lr].raw_HSV_coefs[1][4] = coefs[4] ;
-
-	float sse = fit_full_HSV_model(n_samples,lr,0,pData) ; // last time through, calculate errors on points
-
-	fprintf(stderr, "FINAL fit_full_HSV[%d of %d]:  hpy,Icoef SSE from is (%f,%f) = %f\n", lr,pData->full_hsv_model_level,pData->horizon_py,raw_hsv_coefs[lr].S_inv_coef,sse) ;
-	printf("raw_hsv_coefs S = %f %f %f %f %f\n", raw_hsv_coefs[lr].raw_HSV_coefs[1][0], raw_hsv_coefs[lr].raw_HSV_coefs[1][1],
-		raw_hsv_coefs[lr].raw_HSV_coefs[1][2], raw_hsv_coefs[lr].raw_HSV_coefs[1][3], raw_hsv_coefs[lr].raw_HSV_coefs[1][4]) ;
-	printf("raw_hsv_coefs V = %f %f %f %f\n", raw_hsv_coefs[lr].raw_HSV_coefs[2][0], raw_hsv_coefs[lr].raw_HSV_coefs[2][1],
-		raw_hsv_coefs[lr].raw_HSV_coefs[2][2], raw_hsv_coefs[lr].raw_HSV_coefs[2][3]) ;
+	    pData->val_model_full = 0 ;
+	    fit_sky_model(pData, n_samples) ;
+	}
     }
-
-    int save_uses_CIE_model = uses_CIE_model ;
-    uses_CIE_model = 0 ;
     FILE *fp = fopen("samples.dat", "w") ;
     for(int i = 0 ; i < n_samples ; i++) {
 	float hhat, shat, vhat ;
@@ -486,92 +587,3 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 
     return n_samples ;
 }
-
-#ifdef OLD_CODE
-// weighting for all points when fitting model for single function for entire sky
-static inline float px_wgt_single(float px, float abs_error)
-{
-    return 1./(1.+abs_error)  ;
-}
-
-// weighting for all points when fitting model for left half of sky
-static inline float px_wgt_left(float px, float abs_error)
-{
-    px *= 1.175 ;
-    px -= .25 ;
-    if(px < 0.) px = 0. ;
-    return (1.-3.*px*px+2.*px*px*px) / (1.+abs_error) ;
-}
-
-// weighting for all points when fitting model for right half of sky
-static inline float px_wgt_right(float px, float abs_error)
-{
-    px = (1.-px)*1.175 -.25;
-    if(px < 0.) px = 0. ;
-    return (1.-3.*px*px+2.*px*px*px) / (1.+abs_error) ;
-}
-
-
-static inline float local_h_from_pxpy(float px, float py, struct HSV_model_coefs *p)
-{
-    return p->raw_HSV_coefs[0][0] + p->raw_HSV_coefs[0][1]*px + p->raw_HSV_coefs[0][2]*py + p->raw_HSV_coefs[0][3]*1./(py-horizon_py+.001) ;
-}
-
-static inline float local_ty_from_pxpy(float px, float py, struct HSV_model_coefs *p)
-{
-    float py_hc = py_adjusted_for_horizon_curvature(px, py) ;
-    py_hc -= horizon_py ;
-
-    return 1./(1.+exp(-py_hc*p->S_inv_coef)) ; // really a simple logistic centered on horizon_py
-}
-
-static inline float local_s_from_pxpy(float px, float py, struct HSV_model_coefs *p)
-{
-    float ty = local_ty_from_pxpy(px,py, p) ;
-    return p->raw_HSV_coefs[1][0] + p->raw_HSV_coefs[1][1]*px + p->raw_HSV_coefs[1][2]*ty + p->raw_HSV_coefs[1][3]*px*ty ;
-}
-
-static inline float local_v_from_pxpy(float px, float py, struct HSV_model_coefs *p)
-{
-    return p->raw_HSV_coefs[2][0] + p->raw_HSV_coefs[2][1]*px + p->raw_HSV_coefs[2][2]*py + p->raw_HSV_coefs[2][3]*px*px ;
-}
-
-#define hsv_blended(f,px,py,v) {\
-    float left_wgt = px_wgt_left(px,1.) ;\
-    float right_wgt = px_wgt_right(px,1.) ;\
-    float lvalue = f(px,py,&raw_hsv_coefs[0]) ;\
-    float rvalue = f(px,py,&raw_hsv_coefs[1]) ;\
-    v = (left_wgt*lvalue + right_wgt*rvalue)/(left_wgt+right_wgt) ;\
-    }
-
-
-static inline float h_from_pxpy(float px, float py)
-{
-    if(full_hsv_model_level==1)
-	return local_h_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
-
-    float h ;
-    hsv_blended(local_h_from_pxpy, px, py, h) ;
-    return h ;
-}
-
-static inline float s_from_pxpy(float px, float py)
-{
-    if(full_hsv_model_level==1)
-	return local_s_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
-
-    float s ;
-    hsv_blended(local_s_from_pxpy, px, py, s) ;
-    return s ;
-}
-
-static inline float v_from_pxpy(float px, float py)
-{
-    if(full_hsv_model_level==1)
-	return local_v_from_pxpy(px,py,&raw_hsv_coefs[0]) ;
-
-    float v ;
-    hsv_blended(local_v_from_pxpy, px, py, v) ;
-    return v ;
-}
-#endif

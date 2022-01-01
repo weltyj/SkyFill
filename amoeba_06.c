@@ -211,7 +211,7 @@ float AmoebaFit(float (*function)(), float tol, int itmax, int ndim, float guess
 
     if(verbose) printf("=======  INITIAL SIMPLEX ==============\n") ;
     y[1]=(*function)(p[1]);
-    print_parms(p[1],y[1],ndim) ;
+    if(verbose) print_parms(p[1],y[1],ndim) ;
 
     // now we don't need the +1 on "i" in the loop
     for (i=1;i<=ndim;i++) {

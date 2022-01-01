@@ -3,7 +3,7 @@ SRC=skyfill_tif.c repair_sky.c amoeba_06.c mstat.c colorspace_conversions.c pixe
 OBJS=$(SRC:.c=.o)
 LIBS=-ltiff -lm
 
-skyfill_tif : $(OBJS) Makefile sample_and_fit_sky_model.h
+skyfill_tif : $(OBJS) Makefile
 	gcc $(CFLAGS) $(OBJS) $(LIBS) -o skyfill_tif
  
 .c.o: Makefile sample_and_fit_sky_model.h

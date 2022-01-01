@@ -106,6 +106,7 @@ typedef struct skyfill_data
     int horizon_was_set ;
     int sat_prediction_method ; // flag to change saturation prediction method for sky
     int full_hsv_model_level ;
+    int val_model_full ; // set to one, will use quadratic term in py for predicting sky value 
 
     // global arrays, will indicate what was detected for each column (x) for these values
     int16_t *start_of_sky, *end_of_sky, *final_end_of_sky, *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
@@ -159,6 +160,8 @@ typedef struct skyfill_data
     float proportion_to_radian_factor_y ; // how many radians per proportion of full image in Y dimension ?
     float maximum_CIE_vhat ; // maximum vhat in sky dome
     float minimum_CIE_vhat ; // minimum vhat in sky dome
+
+    float value_angle_factor ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
 
     int max_end_of_sky ;
     int min_end_of_sky ;

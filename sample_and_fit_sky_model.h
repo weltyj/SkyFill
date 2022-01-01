@@ -57,12 +57,12 @@ static inline float local_h_from_pxpy(float px, float py_hc, struct HSV_model_co
     return p->raw_HSV_coefs[0][0] + p->raw_HSV_coefs[0][1]*px + p->raw_HSV_coefs[0][2]*log(1.+py_hc) ;
 }
 
-static inline float local_ty_from_pxpy(float px, float py_hc, struct HSV_model_coefs *p, float horizon_py)
-{
-    py_hc -= horizon_py ;
-
-    return 1./(1.+exp(-py_hc*p->S_inv_coef)) ; // really a simple logistic centered on horizon_py
-}
+/*  static inline float local_ty_from_pxpy(float px, float py_hc, struct HSV_model_coefs *p, float horizon_py)  */
+/*  {  */
+/*      py_hc -= horizon_py ;  */
+/*    */
+/*      return 1./(1.+exp(-py_hc*p->S_inv_coef)) ; // really a simple logistic centered on horizon_py  */
+/*  }  */
 
 static inline float local_s_from_pxpy(float px, float py_hc, struct HSV_model_coefs *p)
 {
@@ -73,9 +73,10 @@ static inline float local_s_from_pxpy(float px, float py_hc, struct HSV_model_co
 
 static inline float local_v_from_pxpy(float px, float py_hc, struct HSV_model_coefs *p)
 {
-    float horz_angle = pData_fit->FOV_horizontal*px*M_PI/180. ;
-/*      fprintf(stderr, "LVFP: HA:%f\n", horz_angle) ;  */
-    return p->raw_HSV_coefs[2][0] + p->raw_HSV_coefs[2][1]*cos(2.*horz_angle) + p->raw_HSV_coefs[2][2]*sin(2.*horz_angle) + p->raw_HSV_coefs[2][3]*py_hc ;
+    float mapped_x = pData_fit->FOV_horizontal*px*M_PI/180.*pData_fit->value_angle_factor ;
+
+    return p->raw_HSV_coefs[2][0] + p->raw_HSV_coefs[2][1]*cos(mapped_x) + p->raw_HSV_coefs[2][2]*sin(mapped_x)
+	    + p->raw_HSV_coefs[2][3]*py_hc + p->raw_HSV_coefs[2][4]*py_hc*py_hc ;
 }
 
 #define hsv_blended(f,px,py,v) {\

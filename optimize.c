@@ -151,96 +151,6 @@ float optimize_grid_function(int CIE_index)
 
 }
 
-float optimize_horizon_function(int CIE_index, float B)
-{
-
-    pData_fit->perez_A = cie_parms[CIE_index].A ;
-    pData_fit->perez_B = B ;
-    pData_fit->perez_C = cie_parms[CIE_index].C ;
-    pData_fit->perez_D = cie_parms[CIE_index].D ;
-    pData_fit->perez_E = cie_parms[CIE_index].E ;
-
-    return samples_error() ;
-
-}
-
-void find_horizon_py_and_curvature(int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[])
-{
-    int i ;
-    float hpy0 = pData->lowest_sky_py_found ;
-    if(hpy0 > 0.5) hpy0 = 0.5 ;
-    float hpy1 = pData->lowest_sky_py_found ;
-    if(hpy1 > 0.99) hpy0 = 0.99 ;
-
-    optimize_type = OPTIMIZE_V_from_HSV ;
-
-    autoset_lumf_flag=1 ;
-    for(i=0 ; i < MAX_OPT_PARMS ; i++) {
-	if(opt_parms[i].grid_optimize_flag == 0) {
-	    if(!strcmp(opt_parms[i].name, "sky_lum")) {
-		autoset_lumf_flag=0 ;
-	    }
-	}
-    }
-
-    n_samples_to_optimize=n_samples ;
-
-    int save_uses_CIE_model = uses_CIE_model ;
-
-    // make sure CIE model is not used in this step
-    uses_CIE_model = 0 ;
-
-#ifndef OLD_CODE
-    float best_feval = 1.e30 ;
-    float best_hc=0. ;
-
-    for(pData->horizon_curvature=-.1 ; pData->horizon_curvature < .101 ; pData->horizon_curvature += .02) {
-	float feval = samples_error() ;
-	if(feval < best_feval) {
-	    best_hc = pData->horizon_curvature ;
-	    best_feval = feval ;
-	}
-	printf("============ horizon curvature:%5.2lf, feval %f ============\n", pData->horizon_curvature, feval) ;
-    }
-
-    pData->horizon_curvature = best_hc ;
-#else
-    float best_feval = 1.e30 ;
-    float best_hpy=pData->lowest_sky_py_found ;
-    float best_B=-.1 ;
-    float best_hc=0. ;
-
-    for(pData->horizon_curvature=-.1 ; pData->horizon_curvature < .101 ; pData->horizon_curvature += .02) {
-	for(pData->perez_B=-.1 ; pData->perez_B > -1.01 ; pData->perez_B -= .1) {
-	    for(pData->horizon_py = hpy0 ; pData->horizon_py < hpy1+.0001 ; pData->horizon_py += .05) {
-		float feval = optimize_horizon_function(15,pData->perez_B) ;
-		//float feval = optimize_grid_function(8) ;
-		if(feval < best_feval) {
-		    best_B = pData->perez_B ;
-		    best_hpy = pData->horizon_py ;
-		    best_hc = pData->horizon_curvature ;
-		    best_feval = feval ;
-		}
-	    }
-	}
-	printf("============ horizon curvature:%5.2lf, horizon:%f, best_feval %f ============\n", pData->horizon_curvature, best_hpy, best_feval) ;
-    }
-
-    pData->horizon_curvature = best_hc ;
-    pData->horizon_py = best_hpy ;
-    pData->perez_B = best_B ;
-
-    //horizon_py = lowest_sky_py_found ;
-    //best_hpy = lowest_sky_py_found ;
-
-
-    printf("============ Grid, lowest_horizon is %5.2lf, Find horizon py returns ============\n", pData->lowest_sky_py_found) ;
-    dump_parameters_to_stdout() ;
-#endif
-
-    uses_CIE_model = save_uses_CIE_model ;
-}
-
 float optimize_grid(int n_samples, int verbose, int allowed_sky_type, int CIE_sky_index,struct OPT_PARM opt_parms[])
 {
     int i ;
@@ -375,6 +285,73 @@ void smart_optimize(int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_par
 
 }
 
+void grid_search_sun_xy(SKYFILL_DATA_t *pData, struct OPT_PARM opt_parms[], int n_samples)
+{
+    // default case, do a grid search for sun position
+    float best_s_x = 0. ;
+    float best_s_y = 1. ;
+    float best_err=FMAX ;
+    int n_tot = 0 ;
+    float sun_dx = 1.e30 ;
+    float sun_dy = 1.e30 ;
+
+    opt_parms[0].lo = -180. ;
+    opt_parms[0].hi = 180. ;
+    opt_parms[1].lo = 0. ;
+    opt_parms[1].hi = 1.5 ;
+
+    fprintf(stderr, "1  Sunx,suny,horz_y=%f,%f,%f\n", pData->sun_x, pData->sun_py, pData->horizon_py) ;
+
+    if(opt_parms[0].grid_optimize_flag == 1) {
+	pData->sun_x=opt_parms[0].lo ;
+	sun_dx = 10. ;
+	fprintf(stderr, "Grid optimize sun_x\n") ;
+    }
+    if(opt_parms[1].grid_optimize_flag == 1) {
+	pData->sun_py=opt_parms[1].lo ;
+	sun_dy = .5 ;
+	fprintf(stderr, "Grid optimize sun_py\n") ;
+    }
+
+    float start_sun_x = pData->sun_x ;
+    float start_sun_py = pData->sun_py ;
+
+    fprintf(stderr, "Grid optimize sun_x from %f to %f by %f\n", start_sun_x, opt_parms[0].hi, sun_dx) ;
+    fprintf(stderr, "Grid optimize sun_py from %f to %f by %f\n", start_sun_py, opt_parms[1].hi, sun_dy) ;
+
+#define FTOL .0001
+    for(pData->sun_x=start_sun_x; pData->sun_x < opt_parms[0].hi+FTOL ; pData->sun_x += sun_dx) {
+	for(pData->sun_py=start_sun_py; pData->sun_py < opt_parms[1].hi+FTOL ; pData->sun_py += sun_dy) {
+	    //fprintf(stderr, "grid evaluations %d, sx:%f sy:%f hy:%f\n", n_tot, sun_x, sun_py, horizon_py) ;
+	    n_tot++ ;
+	}
+    }
+
+    int i_grid_search_no=0 ;
+    fprintf(stderr, "%d grid evaluations will be done\n", n_tot) ;
+
+    for(pData->sun_x=start_sun_x; pData->sun_x < opt_parms[0].hi+FTOL ; pData->sun_x += sun_dx) {
+	for(pData->sun_py=start_sun_py; pData->sun_py < opt_parms[1].hi+FTOL ; pData->sun_py += sun_dy) {
+
+		float err = optimize_grid(n_samples,0,pData->allowed_sky_type, pData->CIE_sky_index,opt_parms) ;
+		i_grid_search_no++ ;
+		printf("Completed %d of %d grid evaluations for sun position\n", i_grid_search_no, n_tot) ;
+
+		if(err < best_err) {
+		    best_err = err ;
+		    best_s_x = pData->sun_x ;
+		    best_s_y = pData->sun_py ;
+		}
+
+	}
+    }
+
+    /* reset for best values */
+    pData->sun_x = best_s_x ;
+    pData->sun_py = best_s_y ;
+    optimize_grid(n_samples,1,pData->allowed_sky_type, pData->CIE_sky_index,opt_parms) ;
+}
+
 void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_OPT_PARMS+1], int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[])
 {
     pData->model_is_being_fit=1 ;
@@ -382,101 +359,10 @@ void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, in
     // set the global pointer
     pData_fit = pData ;
 
-    // limit high value of horizon_py
-    opt_parms[2].hi = ((float)(IMAGE_HEIGHT)-(float)pData->max_end_of_sky)/(float)IMAGE_HEIGHT ;
-    find_horizon_py_and_curvature(n_samples,pData,opt_parms) ;
-
     if(force_grid_optimization || n_custom_optimizations == 0) {
+	if(uses_CIE_model)
+	    grid_search_sun_xy(pData, opt_parms, n_samples) ;
 
-
-	// default case, do a grid search for sun position
-	float best_horizon_py = 0. ;
-	float best_s_x = 0. ;
-	float best_s_y = 1. ;
-	float best_err=FMAX ;
-	int n_tot = 0 ;
-	float sun_dx = 1.e30 ;
-	float sun_dy = 1.e30 ;
-	float horizon_dy = 1.e30 ;
-	opt_parms[0].lo = -180. ;
-	opt_parms[0].hi = 180. ;
-	opt_parms[1].lo = 0. ;
-	opt_parms[1].hi = 1.5 ;
-	opt_parms[2].hi = 1. ;
-
-	fprintf(stderr, "1  Sunx,suny,horz_y=%f,%f,%f\n", pData->sun_x, pData->sun_py, pData->horizon_py) ;
-
-	if(opt_parms[0].grid_optimize_flag == 1) {
-	    pData->sun_x=opt_parms[0].lo ;
-	    sun_dx = 10. ;
-	    fprintf(stderr, "Grid optimize sun_x\n") ;
-	}
-	if(opt_parms[1].grid_optimize_flag == 1) {
-	    pData->sun_py=opt_parms[1].lo ;
-	    sun_dy = .5 ;
-	    fprintf(stderr, "Grid optimize sun_py\n") ;
-	}
-
-	if(opt_parms[2].grid_optimize_flag == 1) {
-	    find_horizon_py_and_curvature(n_samples,pData,opt_parms) ;
-	    // now, horizon_py and horizon_curvature is also set in pData
-
-	    // if(n_custom_optimizations == 0) goto estimate_sky ;
-	    //horizon_py=opt_parms[2].lo ;
-	    //horizon_dy = .1 ;
-	    fprintf(stderr, "Grid optimize horizon_py, curvature found is %6.2f %4.2f\n",pData->horizon_py, pData->horizon_curvature) ;
-	}
-
-
-// FIXME -- need to incorporate searching for sun_x, sun_py, but with some good starting values of C,D,E,F and G
-// no longer look for horizon_py
-#ifdef OLD_CODE
-	float start_sun_x = pData->sun_x ;
-	float start_sun_py = pData->sun_py ;
-	float start_horizon_py = pData->horizon_py ;
-
-	fprintf(stderr, "Grid optimize sun_x from %f to %f by %f\n", start_sun_x, opt_parms[0].hi, sun_dx) ;
-	fprintf(stderr, "Grid optimize sun_py from %f to %f by %f\n", start_sun_py, opt_parms[1].hi, sun_dy) ;
-	fprintf(stderr, "Grid optimize horizon_py from %f to %f by %f\n", start_horizon_py, opt_parms[2].hi, horizon_dy) ;
-
-#define FTOL .0001
-	for(pData->sun_x=start_sun_x; pData->sun_x < opt_parms[0].hi+FTOL ; pData->sun_x += sun_dx) {
-	    for(pData->sun_py=start_sun_py; pData->sun_py < opt_parms[1].hi+FTOL ; pData->sun_py += sun_dy) {
-		for(pData->horizon_py=start_horizon_py; pData->horizon_py < opt_parms[2].hi+FTOL ; pData->horizon_py += horizon_dy) {
-		    //fprintf(stderr, "grid evaluations %d, sx:%f sy:%f hy:%f\n", n_tot, sun_x, sun_py, horizon_py) ;
-		    n_tot++ ;
-		}
-	    }
-	}
-
-	int i_grid_search_no=0 ;
-	fprintf(stderr, "%d grid evaluations will be done\n", n_tot) ;
-
-	for(pData->sun_x=start_sun_x; pData->sun_x < opt_parms[0].hi+FTOL ; pData->sun_x += sun_dx) {
-	    for(pData->sun_py=start_sun_py; pData->sun_py < opt_parms[1].hi+FTOL ; pData->sun_py += sun_dy) {
-		for(pData->horizon_py=start_horizon_py; pData->horizon_py < opt_parms[2].hi+FTOL ; pData->horizon_py += horizon_dy) {
-
-		    float err = optimize_grid(n_samples,0,pData->allowed_sky_type, pData->CIE_sky_index,opt_parms) ;
-		    i_grid_search_no++ ;
-		    printf("Completed %d of %d grid evaluations for sun position\n", i_grid_search_no, n_tot) ;
-
-		    if(err < best_err) {
-			best_err = err ;
-			best_horizon_py = pData->horizon_py ;
-			best_s_x = pData->sun_x ;
-			best_s_y = pData->sun_py ;
-		    }
-
-		}
-	    }
-	}
-
-	/* reset for best values */
-	pData->sun_x = best_s_x ;
-	pData->sun_py = best_s_y ;
-	pData->horizon_py = best_horizon_py ;
-	optimize_grid(n_samples,1,pData->allowed_sky_type, pData->CIE_sky_index,opt_parms) ;
-#endif
 
 	if(n_custom_optimizations == 0) {
 
@@ -486,33 +372,20 @@ void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, in
 	    char *opt1[7] ;
 
 	    // note -- order of elements is important to compare final optimations
-	    char *opt0_a[4] = {"sx","hy","sl","sd"} ;
-	    char *opt1_a[5] = {"sx","sy","sl","D","sd"} ;
+	    char *opt0_a[4] = {"hy","sl","sd","sx"} ;
+	    char *opt1_a[5] = {"sl","sd","sx","sy","D"} ;
 
-	    char *opt0_u[3] = {"sx","sy","hy"} ;
-	    char *opt1_u[3] = {"sx","sy","sl"} ;
 	    int i,j ;
 
 	    int np0, np1 ;
 
-	    if(pData->allowed_sky_type == UNIFORM_CIE_SKIES) {
-		np0 = 3 ;
-		np1 = 3 ;
-		for(j = 0 ; j < np0 ; j++) {
-		    opt0[j] = opt0_u[j] ;
-		}
-		for(j = 0 ; j < np1 ; j++) {
-		    opt1[j] = opt1_u[j] ;
-		}
-	    } else {
-		np0 = 4 ;
-		np1 = 5 ;
-		for(j = 0 ; j < np0 ; j++) {
-		    opt0[j] = opt0_a[j] ;
-		}
-		for(j = 0 ; j < np1 ; j++) {
-		    opt1[j] = opt1_a[j] ;
-		}
+	    np0 = uses_CIE_model ? 4 : 3 ;
+	    np1 = uses_CIE_model ? 5 : 2 ;
+	    for(j = 0 ; j < np0 ; j++) {
+		opt0[j] = opt0_a[j] ;
+	    }
+	    for(j = 0 ; j < np1 ; j++) {
+		opt1[j] = opt1_a[j] ;
 	    }
 
 

@@ -468,10 +468,10 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	recursion_level-- ;
 
 	if(recursion_level <= 0) {
-	    fprintf(stderr, "WARNING: number of fitting points is < 8 in get_mean_rgb, coefs are all 0.0!\n") ;
+	    if(pData->verbose) fprintf(stderr, "WARNING: number of fitting points is < 8 in get_mean_rgb, coefs are all 0.0!\n") ;
 	    return -1 ;
 	}
-	fprintf(stderr, "WARNING: number of fitting points is < 8 in get_mean_rgb, doubling search width\n") ;
+	if(pData->verbose) fprintf(stderr, "WARNING: number of fitting points is < 8 in get_mean_rgb, doubling search width\n") ;
 
 	search_width *= 2 ;
 /*  	fprintf(stderr, "         increasing search_width to %d\n", search_width) ;  */
