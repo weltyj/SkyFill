@@ -31,7 +31,8 @@ USING:
      "-tol \<th\> \<ts\> \<tv\>" -- tolerance for determining edge of skyline at horizon, default 360 .06 0.015
 
      th is the allowed change in Hue in the actual sky pixels, any change in hue from one pixel to another greater than this value
-     will trigger end of sky to be detected
+     will trigger end of sky to be detected.
+     
      ts and tv work the same but for Saturation and Value
  
 
