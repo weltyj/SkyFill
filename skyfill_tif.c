@@ -75,19 +75,23 @@ SKYFILL_DATA_t *pData_fit ;
 void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
 {
 
+    pData->n_test_masks=0 ;
     pData->floatBLK=.04 ; // value at which we assume hugin has masked out a portion of the image and placed black there instead of a alpha of 0 ;
     pData->verbose=0 ;
     pData->fix_SOS_edges=0 ;  // by default, don't fill missing data on edges around the start of the sky
     pData->fill_top_of_sky=0 ;  // by default, don't make start of the sky values equal in first stage of repairing the top of sky
     pData->full_sky_replacement=0 ; // set to 1, will attempt to replace everything down to end of sky, needs df set to 1
+    pData->full_sky_replacement_thresh=.9 ; // threhold at which probability of sky pixel causes replacement of pixels
+    pData->full_sky_replacement_ramp=200. ;
     pData->final_saturation_factor=1.0 ;
     pData->horizon_was_set=0 ;
     pData->sat_prediction_method=1 ;
     pData->val_model_full = 1 ; // set to one, will use quadratic term in py for predicting sky value 
 
     pData->estimate_only=0 ;
-    pData->show_raw_prediction=0 ;
+    pData->show_raw_prediction=0 ; // old model
     pData->show_raw_error=0 ;
+    pData->show_sky_prediction=0 ;
     pData->CIE_sky_index=-1 ; // if 3, will only use CIE coefs to predict given CIE index grid search
     pData->allowed_sky_type = ALL_CIE_SKIES ;
 
@@ -135,7 +139,8 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->maximum_CIE_vhat = 1. ; // maximum vhat in sky dome
     pData->minimum_CIE_vhat = 0. ; // minimum vhat in sky dome
 
-    pData->value_angle_factor = 2. ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
+    pData->angle_factor = 1. ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
+    pData->valsat_phase_shift = -1000. ; // the value and saturations models will apply a phase shift.  This is an invalid value which will cause it to be automatically detected
 
     pData->max_end_of_sky = -1 ;
     pData->min_end_of_sky = -1 ;
@@ -155,8 +160,8 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->perez_C=2. ; // circumsolar intensity, 0 to 25
     pData->perez_D=-2.4 ; // circumsolar radius, -10 to 0
     pData->perez_E=-0.15 ; // backscattering effect, -1 to 5
-    pData->perez_F=1. ; // width of solar disc in reduced model (Jeff Welty)
-    pData->perez_G=1. ; // width of solar disc in reduced model (Jeff Welty)
+    pData->perez_F=0.5 ; // blending amount of sun model into sky hsv model -- Jeff Welty
+    pData->perez_G=10. ; // falloff factor of blending amount -- Jeff Welty
 }
 
 
@@ -177,10 +182,10 @@ void fill_opt_parms(SKYFILL_DATA_t *p)
 	{&p->perez_A, "A", "perez_A", .001, -5., 5., 1, 0, "The A parameter of the perez CIE sky model", 0, 1},
 	{&p->perez_B, "B", "perez_B", -1., -10., -0.001, 1, 0, "The B parameter of the perez CIE sky model", 0, 1},
 	{&p->perez_C, "C", "perez_C", 2., 0., 25., 1, 0, "The C parameter of the perez CIE sky model", 0, 1},
-	{&p->perez_D, "D", "perez_D", -1.5, -100., -0.001, 1, 0, "The D parameter of the perez CIE sky model", 0, 1},
+	{&p->perez_D, "D", "perez_D", -1.5, 0.0001, 0.1, 1, 0, "D in sun model, aprox degrees/100.", 0, 1},
 	{&p->perez_E, "E", "perez_E", 0.15, -1., 5., 1, 0, "The E parameter of the perez CIE sky model", 0, 1},
-	{&p->perez_F, "F", "perez_F", 1.0, .1, 100., 1, 0, "The F parameter of the reduced perez CIE sky model", 0, 1},
-	{&p->perez_G, "G", "perez_G", 1.0, .1, 10., 1, 0, "The G parameter of the reduced perez CIE sky model", 0, 1},
+	{&p->perez_F, "F", "perez_F", 1.0, .01, 1., 1, 0, "The F parameter of the reduced perez CIE sky model", 0, 1},
+	{&p->perez_G, "G", "perez_G", 1.0, .1, 100., 1, 0, "The G parameter of the reduced perez CIE sky model", 0, 1},
 	{&p->exposure_factor, "ef", "exposure factor",    1.0,  0.1, 10.0, 1, 1, "Final exposure appled to sky intensity", 0, 0},
     } ;
 
@@ -477,8 +482,11 @@ float F_CIE2003(float px, float py, float *pGamma, float *pTheta, float *pCos_ga
 /*      float L = (1.+perez_A*exp(perez_B/cos(*pTheta)))*(1.+perez_C*(exp(perez_D*(*pGamma))-exp(perez_D*M_PI/2.)) + perez_E*(*pCos_gamma)*(*pCos_gamma)) ;  */
 
     // reduced model, only adds direct glow from sun
-    float x = powf(*pGamma*pData_fit->perez_F,pData_fit->perez_G) ;
-    float L = (1.+pData_fit->perez_C*(exp(pData_fit->perez_D*x)-exp(pData_fit->perez_D*M_PI/2.))) ;
+/*      float x = powf(*pGamma*pData_fit->perez_F,pData_fit->perez_G) ;  */
+/*      float L = (1.+pData_fit->perez_C*(exp(pData_fit->perez_D*x)-exp(pData_fit->perez_D*M_PI/2.))) ;  */
+
+    // note by using the negative inverse of D, the sun diameter as rendered is linear with D
+    float L = (1.+pData_fit->perez_C*(exp((-1./pData_fit->perez_D)*(*pGamma))-exp((-1./pData_fit->perez_D)*M_PI/2.))) ;
 
     if(isnan(L)) {
 	fprintf(stderr, "NAN in F_CIE2003, sun_x=%f sun_py=%f px=%f py=%f horizon_py=%f theta=%f gamma=%f\n",
@@ -801,6 +809,60 @@ void usage(char *msg, char *msg2)
     exit(1) ;
 }
 
+#ifdef TEST_HSI_MODEL
+// temporary, see if implementation of HSI model conversion is good
+void test_I_model(void)
+{
+    uint16_t r0,g0,b0 ;
+    uint16_t r1,g1,b1 ;
+    float H, S, I ;
+    uint16_t values[11] ;
+
+    for(int i=0 ; i <= 10 ; i++) {
+	values[i] = (uint16_t)((float)i/10.*MAX16f+0.5) ;
+    }
+    int i_r,i_g,i_b ;
+    for(i_r=0 ; i_r <= 10 ; i_r++) {
+    for(i_g=0 ; i_g <= 10 ; i_g++) {
+    for(i_b=0 ; i_b <= 10 ; i_b++) {
+	r0 = values[i_r] ;
+	g0 = values[i_g] ;
+	b0 = values[i_b] ;
+	rgb2hsv16(r0,g0,b0,&H,&S,&I) ;
+	hsv2rgb16(H,S,I,&r1,&g1,&b1) ;
+	int good=1 ;
+	if( abs(r0-r1) > 1.) good=0 ;
+	if( abs(g0-g1) > 1.) good=0 ;
+	if( abs(b0-b1) > 1.) good=0 ;
+	if(! good) {
+	    float m = I*(1.-S)*MAX16f ;
+	    fprintf(stderr, "HSI fails, rgb in (%d,%d,%d), HSI (%f,%f,%f), rgb out(%d,%d,%d), m:%f\n", r0,g0,b0,H,S,I,r1,g1,b1,m) ;
+	}
+    }
+    }
+    }
+    exit(1) ;
+}
+#endif
+
+// setup an array (0 to IMAGE_WIDTH-1, given a number of specified regions to mask
+void setup_mask_array(unsigned char **array, int *mask_l, int *mask_r, int n_masks, int input_W, int quick_test)
+{
+    // apply column masks to array
+
+    *array = (unsigned char *)calloc(input_W, sizeof(unsigned char)) ;
+    for(int x = 0 ; x < input_W ; x++) {
+	(*array)[x/(quick_test+1)] = 0 ;
+    }
+    for(int m = 0 ; m < n_masks ; m++) {
+	for(int x = mask_l[m] ; x <= mask_r[m] ; x++) {
+	    if(x < 0) continue ;
+	    if(x > input_W-1) continue ;
+	    (*array)[x/(quick_test+1)] = 1 ;
+	}
+    }
+}
+
 int main(int argc, char* argv[])
 {
     float depth_of_sample = 0.5 ; // how far into the sky to sample for hue,val and sat
@@ -809,6 +871,9 @@ int main(int argc, char* argv[])
     int extra_feather_length = 0 ; // extend feathering length by this many pixels
     int run_hf=0 ; // run horizontal filter
     int debug=0 ;
+#ifdef TEST_HSI_MODEL
+    test_I_model() ;
+#endif
 
     // data structure to hold data & variables necessary for program
     SKYFILL_DATA_t skyfill_data ;
@@ -818,6 +883,7 @@ int main(int argc, char* argv[])
     pData_fit = pData ;
 
     initialize_skyfill_data_struct(pData) ;
+    samples = NULL ; // make sure the samples array pointer is NULL
     fill_opt_parms(pData) ;
 
     int n_masks=0 ;
@@ -827,6 +893,11 @@ int main(int argc, char* argv[])
     int n_repair_masks=0 ;
     int repair_mask_l[20] ;
     int repair_mask_r[20] ;
+    int n_nonsky_repair_masks=0 ;
+    int nonsky_repair_mask_l[20] ;
+    int nonsky_repair_mask_r[20] ;
+
+    int seam_line_smooth_size = -1 ;  // if greater than 0, run a smoother along the start of sky seam line
 
     int n_sample_masks=0 ;
     int sample_mask_l[20] ;
@@ -835,6 +906,7 @@ int main(int argc, char* argv[])
     char infilename[512] ;
     char outfilename[512] ;
     char ptofilename[512] ;
+    char eosfilename[512] ;
     int interpolate_masked_columns=0 ;
     int verbose_flag=0 ;
     int use_exiftool=1 ;
@@ -865,6 +937,7 @@ int main(int argc, char* argv[])
     strcpy(infilename, argv[1]) ;
     strcpy(outfilename, argv[2]) ;
     strcpy(ptofilename, argv[1]) ;
+    strcpy(eosfilename, argv[1]) ;
     int pto_fov=-1 ;
 
     // can we open a corresponding hugin pto file, and get the horizontal FOV from it?
@@ -880,31 +953,36 @@ int main(int argc, char* argv[])
 	ptofilename[i+2] = 't' ;
 	ptofilename[i+3] = 'o' ;
 	ptofilename[i+4] = '\0' ;
+	eosfilename[i+1] = 'e' ;
+	eosfilename[i+2] = 'o' ;
+	eosfilename[i+3] = 's' ;
+	eosfilename[i+4] = '\0' ;
 	printf("ptofilename is %s\n", ptofilename) ;
+	printf("eosfilename is %s\n", eosfilename) ;
+    }
 
-	FILE *fp = fopen(ptofilename,"r") ;
+    FILE *fp = fopen(ptofilename,"r") ;
 
-	if(fp != NULL) {
-	    char s[1000] ;
-	    while(fgets(s, 999, fp)) {
-		int j ;
+    if(fp != NULL) {
+	char s[1000] ;
+	while(fgets(s, 999, fp)) {
+	    int j ;
 
-		if(s[0] != 'p')
-		    continue ;
+	    if(s[0] != 'p')
+		continue ;
 
-		for(j=0 ; j < strlen(s) ; j++) {
-		    if(s[j] == 'v')
-			break ;
-		}
-
-		if(s[j] == 'v' && s[j-1] == ' ') {
-		    sscanf(&s[j+1], "%d", &pto_fov) ;
-		    printf("PTO fov is %d\n", pto_fov) ;
-		}
+	    for(j=0 ; j < strlen(s) ; j++) {
+		if(s[j] == 'v')
+		    break ;
 	    }
 
-	    fclose(fp) ;
+	    if(s[j] == 'v' && s[j-1] == ' ') {
+		sscanf(&s[j+1], "%d", &pto_fov) ;
+		printf("PTO fov is %d\n", pto_fov) ;
+	    }
 	}
+
+	fclose(fp) ;
     }
 
 
@@ -952,7 +1030,13 @@ int main(int argc, char* argv[])
 		if(opt_parms[i].is_CIE)
 		    uses_CIE_model=1 ;
 
-		*opt_parms[i].variable_address = atof(argv[1]) ;
+		if(!strcmp(opt_parms[i].abreviation, "D")) {
+		    // D parameter specifies Degrees of view for sun
+		    // to make it approximately correct in the formula need to divide by 100
+		    *opt_parms[i].variable_address = atof(argv[1])/100. ;
+		} else {
+		    *opt_parms[i].variable_address = atof(argv[1]) ;
+		}
 		opt_parms[i].grid_optimize_flag = 0 ;
 		opt_parms[i].optimize_flag = 0 ;
 		printf("setting %s to %f\n", opt_parms[i].name, *opt_parms[i].variable_address) ;
@@ -1043,7 +1127,7 @@ int main(int argc, char* argv[])
 	    continue ;
 	}
 
-	if(strlen(argv[0]) == 3) {
+	if(strlen(argv[0]) == 4 || strlen(argv[0]) == 3) {
 	    if(argv[0][0] == '-' && argv[0][1] == 'd') {
 		if(argv[0][2] >= '0' && argv[0][2] <= '9') {
 		    debug = atoi(&(argv[0][2])) ;
@@ -1118,12 +1202,22 @@ int main(int argc, char* argv[])
 	if(!strcmp(argv[0], "-fsr")) {
 	    pData->full_sky_replacement = 1 ;
 	    if(! df_was_set) {
-		depth_of_fill= 1. ;
-		pData->nonlinear_feather = 0.5 ;
+		depth_of_fill= 0.5 ;
+		pData->nonlinear_feather = 1. ;
 	    }
+
+	    pData->noclip_end_of_sky = 0 ;
 
 	    argc -= 1 ;
 	    argv += 1 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-fsrt")) {
+	    pData->full_sky_replacement_thresh = atof(argv[1]) ;
+	    pData->full_sky_replacement_ramp = atof(argv[2]) ;
+	    argc -= 3 ;
+	    argv += 3 ;
 	    continue ;
 	}
 
@@ -1165,16 +1259,39 @@ int main(int argc, char* argv[])
 	    continue ;
 	}
 
+	if(!strcmp(argv[0], "-tm")) {
+	    if(pData->n_test_masks == MAX_TEST_MASKS) {
+		fprintf(stderr, "FATAL: too many test masks specified, maximum is %d\n", MAX_TEST_MASKS) ;
+		exit(1) ;
+	    }
+	    pData->test_extent_mask[pData->n_test_masks].l = atoi(argv[1]) ;
+	    pData->test_extent_mask[pData->n_test_masks].r = atoi(argv[2]) ;
+	    pData->test_extent_mask[pData->n_test_masks].t = atoi(argv[3]) ;
+	    pData->test_extent_mask[pData->n_test_masks].b = atoi(argv[4]) ;
+	    pData->n_test_masks++ ;
+	    argc -= 5 ;
+	    argv += 5 ;
+	    continue ;
+	}
+
 	if(!strcmp(argv[0], "-mse")) {
 	    pData->min_sky_end_p = atof(argv[1]) ;
 	    argc -= 2 ;
 	    argv += 2 ;
 	    continue ;
 	}
+
 	if(!strcmp(argv[0], "-msu")) {
 	    make_sky_uniform_flag = atoi(argv[1]) ;
 	    argc -= 2 ;
 	    argv += 2 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-nceos")) {
+	    pData->noclip_end_of_sky = 1 ;
+	    argc -= 1 ;
+	    argv += 1 ;
 	    continue ;
 	}
 
@@ -1185,6 +1302,14 @@ int main(int argc, char* argv[])
 	    continue ;
 	}
 
+	if(!strcmp(argv[0], "-nsrm")) {
+	    nonsky_repair_mask_l[n_nonsky_repair_masks] = atoi(argv[1]) ;
+	    nonsky_repair_mask_r[n_nonsky_repair_masks] = atoi(argv[2]) ;
+	    n_nonsky_repair_masks++ ;
+	    argc -= 3 ;
+	    argv += 3 ;
+	    continue ;
+	}
 	if(!strcmp(argv[0], "-r_tos_thresh")) {
 	    pData->repair_tos_thresh = atof(argv[1]) ;
 	    argc -= 2 ;
@@ -1198,6 +1323,13 @@ int main(int argc, char* argv[])
 	    n_repair_masks++ ;
 	    argc -= 3 ;
 	    argv += 3 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-sls")) {
+	    seam_line_smooth_size = atoi(argv[1]) ;
+	    argc -= 2 ;
+	    argv += 2 ;
 	    continue ;
 	}
 
@@ -1252,6 +1384,12 @@ int main(int argc, char* argv[])
 	}
 	if(!strcmp(argv[0], "-SRE")) {
 	    pData->show_raw_error=1 ;
+	    argc -= 1 ;
+	    argv += 1 ;
+	    continue ;
+	}
+	if(!strcmp(argv[0], "-SSP")) {
+	    pData->show_sky_prediction=1 ;
 	    argc -= 1 ;
 	    argv += 1 ;
 	    continue ;
@@ -1361,21 +1499,51 @@ int main(int argc, char* argv[])
     V_sun= P3toV3(0., 1., 0.) ; // default with sun directly overhead ;
     pData->maximum_CIE_vhat = find_maximum_CIE_vhat() ;
 
+    pData->manual_end_of_sky = (int16_t *)calloc(IMAGE_WIDTH, sizeof(int16_t *)) ;
+    for(int i = 0 ; i < IMAGE_WIDTH ; i++)
+	pData->manual_end_of_sky[i] = -1 ;
+
+    fp = NULL ;
+    fp = fopen(eosfilename, "r") ;
+
+    if(fp != NULL) {
+	fscanf(fp, "%*s %*s") ; // skip "X Y"
+	int x0=-1 ;
+	int y0=-1 ;
+	int x1, y1 ;
+
+	while(fscanf(fp, "%d %d", &x1, &y1) == 2) {
+	    if(quick_test) {
+		x1 /= 2 ;
+		y1 /= 2 ;
+	    }
+
+	    if(x0 != -1 && x1 != -1) {
+		float dy = (float)(y1-y0)/(float)(x1-x0) ;
+		float fy = y0 ;
+		for(int x=x0 ; x<= x1 ; x++) {
+		    int y = (int)(fy+0.5) ;
+		    pData->manual_end_of_sky[x] = y ;
+/*  		    printf("MEOS x:%d y:%d\n", x, y) ;  */
+		    fy += dy ;
+		}
+	    }
+
+	    x0 = x1 ;
+	    y0 = y1 ;
+	}
+
+	fclose(fp) ;
+    }
+
     fprintf(stderr, "input image is %d x %d, %d bits, %d channels, %d = %d\n", (int)input_W, (int)input_H, (int)BPS, (int)SPP, (int)(input_W*BPS/8*SPP), (int)ROWSIZE) ;
 
     // apply column masks to column_mask array
+    setup_mask_array(&pData->column_mask, mask_l, mask_r, n_masks, input_W, quick_test) ;
+    setup_mask_array(&pData->column_repair_mask, repair_mask_l, repair_mask_r, n_repair_masks, input_W, quick_test) ;
+    setup_mask_array(&pData->column_nonsky_repair_mask, nonsky_repair_mask_l, nonsky_repair_mask_r, n_nonsky_repair_masks, input_W, quick_test) ;
+    setup_mask_array(&pData->column_sample_mask, sample_mask_l, sample_mask_r, n_sample_masks, input_W, quick_test) ;
 
-    pData->column_mask = (unsigned char *)calloc(w, sizeof(unsigned char)) ;
-    for(x = 0 ; x < w ; x++) {
-	pData->column_mask[x] = 0 ;
-    }
-    for(int m = 0 ; m < n_masks ; m++) {
-	for(x = mask_l[m] ; x <= mask_r[m] ; x++) {
-	    if(x < 0) continue ;
-	    if(x > input_W-1) continue ;
-	    pData->column_mask[x/(quick_test+1)] = 1 ;
-	}
-    }
 
     int x0 ;
 
@@ -1388,33 +1556,21 @@ int main(int argc, char* argv[])
 	exit(1) ;
     }
 
+
+
     // apply column repair masks to column_repair_mask array
 
-    pData->column_repair_mask = (unsigned char *)calloc(w, sizeof(unsigned char)) ;
-    for(x = 0 ; x < w ; x++) {
-	pData->column_repair_mask[x/(quick_test+1)] = 0 ;
-    }
-    for(int m = 0 ; m < n_repair_masks ; m++) {
-	for(x = repair_mask_l[m] ; x <= repair_mask_r[m] ; x++) {
-	    if(x < 0) continue ;
-	    if(x > input_W-1) continue ;
-	    pData->column_repair_mask[x/(quick_test+1)] = 1 ;
-	}
-    }
-
-    // apply column sample masks to column_sample_mask array
-
-    pData->column_sample_mask = (unsigned char *)calloc(w, sizeof(unsigned char)) ;
-    for(x = 0 ; x < w ; x++) {
-	pData->column_sample_mask[x/(quick_test+1)] = 0 ;
-    }
-    for(int m = 0 ; m < n_sample_masks ; m++) {
-	for(x = sample_mask_l[m] ; x <= sample_mask_r[m] ; x++) {
-	    if(x < 0) continue ;
-	    if(x > input_W-1) continue ;
-	    pData->column_sample_mask[x/(quick_test+1)] = 1 ;
-	}
-    }
+/*      pData->column_repair_mask = (unsigned char *)calloc(w, sizeof(unsigned char)) ;  */
+/*      for(x = 0 ; x < w ; x++) {  */
+/*  	pData->column_repair_mask[x/(quick_test+1)] = 0 ;  */
+/*      }  */
+/*      for(int m = 0 ; m < n_repair_masks ; m++) {  */
+/*  	for(x = repair_mask_l[m] ; x <= repair_mask_r[m] ; x++) {  */
+/*  	    if(x < 0) continue ;  */
+/*  	    if(x > input_W-1) continue ;  */
+/*  	    pData->column_repair_mask[x/(quick_test+1)] = 1 ;  */
+/*  	}  */
+/*      }  */
 
     // Read the input tif image
 
@@ -1540,7 +1696,7 @@ estimate_sky:
 
     fprintf(stderr, "back in main\n") ;
 
-    if(pData->show_raw_error || pData->show_raw_prediction || pData->estimate_only)
+    if(pData->show_raw_error || pData->show_raw_prediction || pData->estimate_only || pData->show_sky_prediction)
 	goto writeout ;
 
     int min_sky=h ;
@@ -1642,6 +1798,64 @@ estimate_sky:
     }
 
 
+    if(seam_line_smooth_size > 1) {
+	// this needs to be in {}'s because the "goto writeout" isn't happy when
+	// other variables are declared in the scope between the goto and the label
+	uint16_t **output_buf = (uint16_t **) calloc(IMAGE_HEIGHT, sizeof(uint16_t *)) ;
+
+	// alloc a buffer to hold output data
+	for(i = 0 ; i < IMAGE_HEIGHT ; i++) {
+	    output_buf[i] = (uint16_t *) calloc(IMAGE_WIDTH, sizeof(uint16_t)) ;
+	}
+
+	for(int ch=0 ; ch < 3 ; ch++) {
+	    int ox, oy ;
+
+	    for(ox = 0 ; ox < IMAGE_WIDTH ; ox++) {
+		if(pData->column_mask[ox] == 1) continue ;
+
+		for(oy = pData->start_of_sky[ox]-seam_line_smooth_size ; oy < pData->start_of_sky[x]+seam_line_smooth_size ; oy++) {
+		    if(oy > pData->end_of_sky[ox]) break ;
+
+		    float sum=0. ;
+		    float n =0.;
+
+		    for(x=ox-seam_line_smooth_size ; x <= ox+seam_line_smooth_size ; x++) {
+			if(pData->column_mask[x] == 1) continue ;
+			if(x < 0) continue ;
+			if(x > IMAGE_WIDTH-1) continue ;
+
+			for(y=oy-seam_line_smooth_size ; y <= oy+seam_line_smooth_size ; y++) {
+
+			    if(y < 0) continue ;
+			    if(y > pData->end_of_sky[x]) break ;
+
+			    sum += ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] ;
+			    n += 1. ;
+			}
+		    }
+
+		    output_buf[oy][ox] = (uint16_t)(sum/n+0.5) ;
+		}
+	    }
+
+	    for(ox = 0 ; ox < IMAGE_WIDTH ; ox++) {
+		if(pData->column_mask[ox] == 1) continue ;
+
+		for(oy = pData->start_of_sky[ox]-seam_line_smooth_size ; oy < pData->start_of_sky[x]+seam_line_smooth_size ; oy++) {
+		    if(oy > pData->end_of_sky[ox]) break ;
+
+		    ((uint16_t *)(image[oy]))[IMAGE_NSAMPLES*ox+ch] = output_buf[oy][ox] ;
+		}
+	    }
+	}
+
+
+	for(i = 0 ; i <= pData->max_end_of_sky ; i++) {
+	    free(output_buf[i]) ;
+	}
+	free(output_buf) ;
+    }
 
 #define DBW 4
 #define DBH 6
@@ -1789,6 +2003,17 @@ estimate_sky:
 writeout:
     if(debug) {
 	for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
+
+	    // indicate manual end of sky as red
+	    y = pData->manual_end_of_sky[x] ;
+	    if(y >= 0 && y <h) {
+		int yset = y+2 ; // set the color of the pixel two below EOS to green, so you can see the transition pixels above
+
+		if(yset > h-1) yset = h-1 ;
+
+		tif_set4c(image,x,yset,MAX16,0,0,MAX16) ;
+	    }
+
 	    if(pData->column_mask[x] == 1) continue ;
 
 	    float sky_height = pData->end_of_sky[x] - pData->start_of_sky[x] ;
@@ -1800,7 +2025,8 @@ writeout:
 		    fprintf(stderr, "debug: sos y=%d\n", y) ;
 		    exit(1) ;
 		}
-		tif_set4c(image,x,y,MAX16,0,0,MAX16) ;
+		if(y > 0)
+		    tif_set4c(image,x,y-1,MAX16,0,0,MAX16) ;
 	    }
 
 	    // indicate raw_start of sky as yellow line
@@ -1810,21 +2036,23 @@ writeout:
 		    exit(1) ;
 		}
 
-		tif_set4c(image,x,y,HALF16,HALF16,0,MAX16) ;
+		if(y > 0)
+		    tif_set4c(image,x,y-1,HALF16,HALF16,0,MAX16) ;
 	    }
 
-	    // indicate end of fill as black
-	    for(y = feather_end_y ; y < feather_end_y+1 ; y++) {
-		if(y < 0 || y >=h) {
-		    fprintf(stderr, "debug: feather y=%d\n", y) ;
-		    exit(1) ;
-		}
+	    if(debug > 3) {
+		// indicate end of fill as grey
+		for(y = feather_end_y ; y < feather_end_y+1 ; y++) {
+		    if(y < 0 || y >=h) {
+			fprintf(stderr, "debug: feather y=%d\n", y) ;
+			exit(1) ;
+		    }
 
-		tif_set4c(image,x,y,0,0,0,MAX16) ;
+		    tif_set4c(image,x,y,HALF16,HALF16,HALF16,MAX16) ;
+		}
 	    }
 
 	    // indicate end of detected sky as green
-	    //for(y = end_of_sky[x]-1 ; y < end_of_sky[x]+1 ; y++) {
 	    for(y = pData->end_of_sky[x] ; y < pData->end_of_sky[x]+1 ; y++) {
 		if(y < 0 || y >=h) {
 		    fprintf(stderr, "debug: eos x=%d, y=%d\n", x, y) ;
@@ -1836,6 +2064,19 @@ writeout:
 		if(yset > h-1) yset = h-1 ;
 
 		tif_set4c(image,x,yset,0,MAX16,0,MAX16) ;
+	    }
+	}
+
+	if(samples != NULL) {
+	    // mark location of sky samples with black pixels
+	    for(int i=0 ; i < n_samples ; i++) {
+		int xc = samples[i].x ;
+		int yc = samples[i].y ;
+/*  		fprintf(stderr, "sample %d, x,y:%d,%d\n", i,xc,yc) ;  */
+		float fact = samples[i].abs_v_error[0] * 10. ;
+		if(fact > 1.) fact = 1. ;
+		uint16_t f = (uint16_t)(fact * (float)MAX16+0.5) ;
+		tif_set4c(image,xc,yc,f,f,f,MAX16) ;
 	    }
 	}
     }
@@ -1906,10 +2147,14 @@ writeout:
     free(pData->raw_start_of_sky) ;
     free(pData->start_of_sky) ;
     free(pData->end_of_sky) ;
+    free(pData->manual_end_of_sky) ;
     free(pData->final_end_of_sky) ;
     free(pData->column_mask) ;
     free(pData->column_repair_mask) ;
+    free(pData->column_nonsky_repair_mask) ;
     free(pData->column_sample_mask) ;
+    if(samples != NULL)
+	free(samples) ;
 
     // finally, copy exif tags from original to output image
     // The ICC profile seems to only be recognized in exif tags, not tiff tags, by at least

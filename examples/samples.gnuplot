@@ -6,11 +6,24 @@ set view map
 set autoscale
 set parametric
 set style data points
-#1 2 3 4 5 6    7    8    9    10   11   12
-#x y h s v hhat shat vhat herr serr verr angle
+# 1  2 3 4 5 6    7    8    9    10   11   12    13
+#px py h s v hhat shat vhat herr serr verr angle log(py)
 set key box
 set terminal pngcairo size 800,600 enhanced font 'Verdana,10'
 
+#set title 'pred sat vs hue, colored by py'
+#set output 'samples_s3val.png'
+#splot "samples.dat" u 3:7:2 with points palette pointsize 1 pointtype 7
+
+set title 'Actual Saturation vs Value, colored by py'
+set output 'samples_s_vs_I.png'
+splot "samples.dat" u 5:4:2 with points palette pointsize 1 pointtype 7
+
+set title 'py vs px, colored by hue error'
+set output 'samples_h3err.png'
+splot "samples.dat" u 1:2:9 with points palette pointsize 1 pointtype 7
+
+set yrange [180:230]
 set title 'Hue vs py, colored by px'
 set output 'samples_h3pya.png'
 splot "samples.dat" u 2:3:1 with points palette pointsize 1 pointtype 7
@@ -28,12 +41,13 @@ set output 'samples_h3pxp.png'
 splot "samples.dat" u 12:6:2 with points palette pointsize 1 pointtype 7
 
 
+set yrange [0.0:0.7]
 set title 'Saturation vs py, colored by px'
 set output 'samples_s3pya.png'
 splot "samples.dat" u 2:4:1 with points palette pointsize 1 pointtype 7
 
 set title 'Saturation vs horizontal angle, colored by py'
-set output 'samples_s3pya.png'
+set output 'samples_s3pxa.png'
 splot "samples.dat" u 12:4:2 with points palette pointsize 1 pointtype 7
 
 set title 'Predicted Saturation vs py, colored by px'
@@ -41,10 +55,15 @@ set output 'samples_s3pyp.png'
 splot "samples.dat" u 2:7:1 with points palette pointsize 1 pointtype 7
 
 set title 'Predicted Saturation vs horizontal angle, colored by py'
-set output 'samples_s3pyp.png'
+set output 'samples_s3pxp.png'
 splot "samples.dat" u 12:7:2 with points palette pointsize 1 pointtype 7
 
 
+
+set yrange [0.0:1.0]
+set title 'py vs px, colored by value'
+set output 'samples_v3pypx.png'
+splot "samples.dat" u 1:2:5 with points palette pointsize 1 pointtype 7
 
 set title 'Value vs py, colored by px'
 set output 'samples_v3pya.png'

@@ -476,8 +476,5 @@ void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, in
 	    smart_optimize(n_samples, pData, opt_parms) ;
 
 	}
-
-	free(samples) ;
-
     }
 }

@@ -23,6 +23,160 @@ float get_xy_L(tdata_t *image, int x, int y)
     return 0.21126*fr + 0.7152*fg + 0.0722*fb ;
 }
 
+struct sky_pixel_data {
+    float h_hat,s_hat,v_hat ;
+    uint16_t r_hat, g_hat, b_hat ;
+    float r_err, g_err, b_err ;
+    float h_of_e,s_of_e,v_of_e ;
+    float h,s,v ;
+    float max_err ;
+    float p_hat ;
+    float hsv_err ;
+    float prob_sky ;
+    uint16_t r, g, b ;
+} ;
+
+int get_end_of_sky(SKYFILL_DATA_t *pData, int x)
+{
+    if(pData->column_mask[x] == 0) return pData->end_of_sky[x] ;
+
+    // column is masked, search for nearest left, nearest right
+    int left_eos=-1 ;
+    int right_eos=-1 ;
+    int left_x, right_x ;
+
+    for(left_x = x-1 ; left_x > -1 ; left_x--) {
+	if(pData->column_mask[left_x] == 0) {
+	    left_eos = pData->end_of_sky[left_x] ;
+	    break ;
+	}
+    }
+
+    for(right_x = x+1 ; right_x < IMAGE_WIDTH ; right_x++) {
+	if(pData->column_mask[right_x] == 0) {
+	    right_eos = pData->end_of_sky[right_x] ;
+	    break ;
+	}
+    }
+
+    if(left_x == -1) return right_eos ;
+    if(right_x == -1) return left_eos ;
+
+    float p_left = 1.-(float)(x-left_x)/(float)(right_x-left_x) ;
+    return (int)(p_left*(float)left_eos + (1.-p_left)*(float)right_eos + 0.5) ;
+}
+
+float get_prob_sky(tdata_t *image, int x,int y, SKYFILL_DATA_t *pData, struct sky_pixel_data *p)
+{
+
+    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
+    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
+
+    p->r_err=0., p->g_err=0., p->b_err=0. ;
+    p->h_of_e=0.,p->s_of_e=0.,p->v_of_e=0. ;
+    p->h=0.,p->s=0.,p->v=0. ;
+    p->max_err=0. ;
+    p->p_hat = 1. ;
+    p->hsv_err = 0. ;
+    p->prob_sky=1. ;
+
+    predict_sky_hsv(px, py, &p->h_hat, &p->s_hat, &p->v_hat) ;
+    hsv2rgb16(p->h_hat,p->s_hat,p->v_hat,&p->r_hat,&p->g_hat,&p->b_hat) ;
+
+    if(y >= pData->start_of_sky[x]) {
+	tif_get3c(image,x,y,p->r,p->g,p->b) ;
+	rgb2hsv16(p->r,p->g,p->b,&p->h,&p->s,&p->v) ;
+
+	// intensity
+	float I_hat = (float)(p->r_hat+p->g_hat+p->b_hat)/3. ;
+	float I = (float)(p->r+p->g+p->b)/3. ;
+
+	p->r_err = fabs((float)p->r_hat - (float)p->r) ;
+	p->g_err = fabs((float)p->g_hat - (float)p->g) ;
+	p->b_err = fabs((float)p->b_hat - (float)p->b) ;
+
+	if(0) {
+
+	if(p->r_hat > p->r)
+	    p->r_err = p->r_hat-p->r ;
+	else
+	    p->r_err = p->r-p->r_hat ;
+
+	if(p->g_hat > p->g)
+	    p->g_err = p->g_hat-p->g ;
+	else
+	    p->g_err = p->g-p->g_hat ;
+
+	if(p->b_hat > p->b)
+	    p->b_err = p->b_hat-p->b ;
+	else
+	    p->b_err = p->b-p->b_hat ;
+	}
+
+	// a few attempts at computing probablity this  pixel is a clear sky pixel
+	if(0) {
+	    float I_err = fabs(1.-I/I_hat) ;
+	    float s_err = fabs(1.-p->s/p->s_hat) ;
+	    float h_err = fabs(1.-p->h/p->h_hat) ;
+	    float wgt_I = 5. ;
+	    float wgt_s = 3. ;
+	    float wgt_h = 10.*p->s_hat ; // low saturation means low weight for hue
+	    float hsI_err = (wgt_I*I_err + wgt_s*s_err + wgt_h*h_err)/(wgt_I+wgt_s+wgt_h) ;
+
+	    if(hsI_err > 1.)
+		hsI_err = 1. ;
+
+	    p->prob_sky = 1.-hsI_err ;
+	} else if(0) {
+
+	    // compute hsv of r_err,g_err,b_err
+	    // looks like if saturation is low, it is probably
+	    // a localized error of the full sky model
+
+	    rgb2hsv16(p->r_err,p->g_err,p->b_err,&p->h_of_e,&p->s_of_e,&p->v_of_e) ;
+	    // v_of_e will be the max of (r_err,g_err,b_err) now
+
+	    if(p->s_of_e > .01) p->s_of_e = .01 ;
+
+	    p->prob_sky = (1.-p->v_of_e)*(1.-p->s_of_e*p->s_of_e) ;
+	} else if(1) {
+	    float wgt_r = p->r_hat ;
+	    float wgt_g = p->g_hat ;
+	    float wgt_b = p->b_hat ;
+
+	    float wgted_err = (
+		wgt_r*(float)p->r_err/(float)MAX16 +
+		wgt_g*(float)p->g_err/(float)MAX16 +
+		wgt_b*(float)p->b_err/(float)MAX16) / (wgt_r + wgt_g + wgt_b) ;
+
+	    p->prob_sky= 1. - wgted_err ;
+	} else {
+
+	    p->prob_sky= 1. - (float)p->b_err/(float)MAX16 ;
+	}
+
+	p->p_hat = 1./(1+exp(-(p->prob_sky-pData->full_sky_replacement_thresh)*pData->full_sky_replacement_ramp)) ;
+
+	if(p->s < p->s_hat) {
+	    if(I > I_hat && p->s < p->s_hat) {
+		// if the actual is less saturated, with higher intensity, it could be a cloud
+		p->p_hat *= I_hat/I * p->s/p->s_hat ;
+	    } else {
+		// if the actual is less saturated, with lower intensity, it could also be a cloud
+		p->p_hat *= I/I_hat * p->s/p->s_hat ;
+	    }
+	}
+
+
+
+
+	if(p->p_hat > 1.) p->p_hat = 1. ;
+	if(p->p_hat < 0.) p->p_hat = 0. ;
+    }
+
+    return p->prob_sky ;
+}
+
 void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky,int16_t *final_end_of_sky,
 		    float depth_of_sample, int h, int w, float feather_factor, int debug, float depth_of_fill, int extra_feather_length, SKYFILL_DATA_t *pData)
 {
@@ -103,25 +257,25 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
     if(pData->show_raw_prediction || pData->estimate_only) {
 	for(x = x0 ; x <= x1 ; x++) {
-	    if(pData->column_mask[x] == 1) continue ;
+	    if(!pData->estimate_only && pData->column_mask[x] == 1) continue ;
 	    int ymax = pData->show_raw_prediction ? pData->start_of_sky[x]+1 : pData->end_of_sky[x]  ;
+/*  	    int ymax = pData->show_raw_prediction ? pData->start_of_sky[x]+1 : IMAGE_HEIGHT  ;  */
 
 	    for(y = 0 ; y < ymax ; y++) {
 		// completely model sky color
 		float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 		float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
-		float hhat,shat,vhat ;
-		uint16_t rhat, ghat, bhat ;
+		float h_hat,s_hat,v_hat ;
+		uint16_t r_hat, g_hat, b_hat ;
 
-		predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
+		predict_sky_hsv(px, py, &h_hat, &s_hat, &v_hat) ;
 
-/*  		shat *= final_saturation_factor ;  */
-/*  		predict_sky_huesat_from_val(vhat, &hhat, &shat, &vhat, px, py) ;  */
+/*  		s_hat *= final_saturation_factor ;  */
 
-		hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;
+		hsv2rgb16(h_hat,s_hat,v_hat,&r_hat,&g_hat,&b_hat) ;
 
-		tif_set4c(image,x,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16);
+		tif_set4c(image,x,y, r_hat, g_hat, b_hat, MAX16);
 	    }
 
 	}
@@ -129,19 +283,26 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	goto estimate_sky_cleanup ;
     }
 
-    if(pData->full_sky_replacement || pData->show_raw_error) {
+    if(uses_CIE_model)
+	fprintf(stderr, "****************** Blending in sun model *****************\n") ;
+
+    if(pData->full_sky_replacement || pData->show_raw_error || pData->show_sky_prediction) {
 	if(pData->show_raw_error) pData->full_sky_replacement=0 ; // show_raw_error overrides 
+	if(pData->show_raw_error) pData->show_sky_prediction=0 ; // show_raw_error overrides 
+	if(pData->show_sky_prediction) pData->full_sky_replacement=0 ; // show_sky_prediction overrides 
+
+
+
 	for(x = x0 ; x <= x1 ; x++) {
 /*  	    if(pData->column_mask[x] == 1) continue ;  */
-	    int ymax = pData->end_of_sky[x]+10  ;
-
-	    if(ymax > IMAGE_HEIGHT-1)
-		ymax = IMAGE_HEIGHT-1 ;
-
-	    ymax = IMAGE_HEIGHT-1 ;
+	    int ymax = get_end_of_sky(pData,x)  ;
+	    if(ymax < pData->manual_end_of_sky[x]) ymax = pData->manual_end_of_sky[x] ;
+	    if(ymax > pData->manual_end_of_sky[x] && pData->manual_end_of_sky[x] != -1) ymax = pData->manual_end_of_sky[x] ;
 
 	    int feather_end_y ;
-	    int feather_length = compute_feather_length(x, &feather_end_y, depth_of_fill, feather_factor, extra_feather_length, pData) ;
+	    int feather_length = compute_feather_length_with_eos(x, &feather_end_y, depth_of_fill, feather_factor, extra_feather_length, pData, ymax) ;
+
+/*  	    ymax = IMAGE_HEIGHT-1 ;  */
 
 	    for(y = 0 ; y < ymax ; y++) {
 		// completely model sky color
@@ -151,110 +312,105 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 		if(py_adjusted_for_horizon_curvature(px,py) < pData->horizon_py+.005)
 		    break ;
 
-		float hhat,shat,vhat ;
-		uint16_t rhat, ghat, bhat ;
-		float r_err=0., g_err=0., b_err=0. ;
-		float max_err=0. ;
-		float p_hat = 1. ;
-		float sv_err = 0. ;
-		float prob_sky=1. ;
+		// if we are near the sun, but below the start of sky, incorporation
+		// more of the base image so things like sun flare can come through
+		float sun_prob = 0. ;
+		float py_dist = -1. ;
+		float px_dist = -1. ;
 
-		predict_sky_hsv(px, py, &hhat, &shat, &vhat) ;
-		hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;
+		if(uses_CIE_model) {
+		    py_dist = (py-pData->sun_py) ;
+		    px_dist = (px-sun_px) ;
+
+		    // weight of perez_F at sun center, falls off with square of distance
+		    sun_prob = pData->perez_F/(1.+pData->perez_G*(px_dist*px_dist+py_dist*py_dist)) ;
+		}
+
+		struct sky_pixel_data sp ;
+		float prob_sky = get_prob_sky(image, x, y, pData, &sp) ;
+		float feather_prob = 1. ;
 
 		if(y >= pData->start_of_sky[x]) {
-		    uint16_t r, g, b ;
-		    float feather_p_hat ;
 
 		    if(y <= feather_end_y)
-			feather_p_hat = compute_feather_at_y(x, y, feather_length, b, feather_factor, pData) ;
+			feather_prob = compute_feather_at_y(x, y, feather_length, MAX16, feather_factor, pData) ;
 		    else
-			feather_p_hat = 0.0 ;
+			feather_prob = 0.0 ;
 
-		    tif_get3c(image,x,y,r,g,b) ;
-		    float h,s,v ;
-		    rgb2hsv16(r,g,b,&h,&s,&v) ;
-
-		    sv_err=(fabs(h-hhat)/36.*s+fabs(s-shat)+fabs(v-vhat))*HALF16 ;
-
-		    if(sv_err < 9.*256.) {
-			p_hat = 1. ;
+		    if(pData->column_mask[x] == 1) {
+			feather_prob = 0.0 ;
 		    } else {
-			p_hat = 1. - (sv_err-9.*256)/(30.*256.) ;
+			if(y < start_of_sky[x]) {
+			    feather_prob = 1. ;
+			} else {
+/*  			    feather_prob = 1. - (float)(y-start_of_sky[x])/((float)(ymax-(float)start_of_sky[x]) ;  */
+/*  			    feather_prob = powf(feather_prob,pData->nonlinear_feather) ;  */
+			}
 		    }
 
-		    if(rhat > r)
-			r_err = rhat-r ;
-		    else
-			r_err = r-rhat ;
+		    // convert linear blend to logistic blend
+#define L2L_B0 .5
+#define L2L_B1 5
+		    float l2l_offset = 1./(1.+exp(-(0.-L2L_B0)*L2L_B1)) ;
+		    float l2l_scale = 1./(1.-l2l_offset*2.) ;
+		    feather_prob = l2l_scale*(1./(1.+exp(-(feather_prob-L2L_B0)*L2L_B1))-l2l_offset) ;
 
-		    if(ghat > g)
-			g_err = ghat-g ;
-		    else
-			g_err = g-ghat ;
+		    // Now we have 3 factors to consider of how much of the predicted pixel color to use
+		    // 1. p_hat -- the amount of predicted value to use only with consideration if the pixel looks like a sky pixel
+		    // 2. feather_prob -- the amount of predicted value to use 100% at the top of the original sky, to 0% at the depth of fill level
+		    // 3. image_wgt_sun -- override for how much predicted value to use given the nearness to the sun
 
-		    if(bhat > b)
-			b_err = bhat-b ;
-		    else
-			b_err = b-bhat ;
+		    if(pData->column_nonsky_repair_mask[x] == 0) {
+			if(sp.p_hat < feather_prob) sp.p_hat = feather_prob ;
 
-		    max_err = r_err ;
+			// beyond depth of fill, make sure p_hat goes to 0 at end of sky
+			if(y > feather_end_y && pData->noclip_end_of_sky)
+			    sp.p_hat *= 1. - (float)(y-feather_end_y)/(ymax-feather_end_y) ;
 
-		    if(max_err < g_err) max_err = g_err ;
-		    if(max_err < b_err) max_err = b_err ;
-/*  		    p_hat = 1.-2.*max_err/(float)(HALF16) ;  */
+			// increase p_hat as x,y gets more near to the sun
+			if(sp.p_hat < sun_prob) sp.p_hat = sun_prob ;
 
-		    // compute hsv of r_err,g_err,b_err
-		    // looks like if saturation is low, it is probably
-		    // a localized error of the full sky model
-		    float h_of_e,s_of_e,v_of_e ;
-		    rgb2hsv16(r_err,g_err,b_err,&h_of_e,&s_of_e,&v_of_e) ;
-
-		    prob_sky = (1.-s_of_e)*(1.-v_of_e) ;
-		    if(s_of_e > .01) s_of_e = .01 ;
-		    prob_sky = (1.-v_of_e)*(1.-s_of_e*s_of_e) ;
-
-#define PS_THRESH 0.95
-		    if(prob_sky > PS_THRESH) {
-			p_hat = 1. ;
 		    } else {
-			p_hat = 1. - (PS_THRESH-prob_sky)/(PS_THRESH-.85) ;
+			// if p_hat is low, do not change it
+			float raw_p_hat = sp.p_hat ;
+			if(sp.p_hat < feather_prob) sp.p_hat = feather_prob ;
+			if(sp.p_hat < sun_prob) sp.p_hat = sun_prob ;
+
+			// now correct based on raw_p_hat
+			// if raw_p_hat is 1., use all of the new value
+			// if raw_p_hat is 0., use all of the initial value
+			sp.p_hat = raw_p_hat * (sp.p_hat) + (1.-raw_p_hat)*raw_p_hat ;
 		    }
 
-
-		    if(p_hat > 1.) p_hat = 1. ;
-		    if(p_hat < 0.) p_hat = 0. ;
-		    if(! pData->show_raw_error && p_hat < feather_p_hat) p_hat = feather_p_hat ;
-
-		    // cloud detector, doesn't seem to work
-/*  		    if(y < pData->end_of_sky[x] && shat/.8 > s && vhat*.8 < v) {  */
-/*  			p_hat=0. ;  */
-/*  			max_err=0. ;  */
-/*  		    }  */
-
-		    if(1) {
-			rhat = (uint16_t)(p_hat*(float)rhat + (1.-p_hat)*(float)r +.5) ;
-			ghat = (uint16_t)(p_hat*(float)ghat + (1.-p_hat)*(float)g +.5) ;
-			bhat = (uint16_t)(p_hat*(float)bhat + (1.-p_hat)*(float)b +.5) ;
-		    } else {
-			// doesn't seem to work any better, and is slower
-/*  			hhat = (p_hat*(float)hhat + (1.-p_hat)*(float)h) ;  */
-/*  			shat = (p_hat*(float)shat + (1.-p_hat)*(float)s) ;  */
-/*  			vhat = (p_hat*(float)vhat + (1.-p_hat)*(float)v) ;  */
-/*    */
-/*  			hsv2rgb16(hhat,shat,vhat,&rhat,&ghat,&bhat) ;  */
-		    }
+		    sp.r_hat = (uint16_t)(sp.p_hat*(float)sp.r_hat + (1.-sp.p_hat)*(float)sp.r +.5) ;
+		    sp.g_hat = (uint16_t)(sp.p_hat*(float)sp.g_hat + (1.-sp.p_hat)*(float)sp.g +.5) ;
+		    sp.b_hat = (uint16_t)(sp.p_hat*(float)sp.b_hat + (1.-sp.p_hat)*(float)sp.b +.5) ;
 		}
+
+/*  #define DEBUG_COL 1515  */
+#ifdef DEBUG_COL
+		    if(x == DEBUG_COL && !(y%10)) {
+			printf("SUN: x:%d y:%d px_dist:%4.2f py_dist:%4.2f IWS:%4.2f p_hat:%4.2f fp_hat:%4.2f prob_sky:%4.2f\n",
+			x, y, px_dist, py_dist, image_wgt_sun, sp.p_hat, feather_prob, prob_sky) ;
+			printf("\t hsv hat %3.0f %5.2f %5.2f\n", sp.h_hat, sp.s_hat, sp.v_hat) ;
+			printf("\t b,b_hat %5d %5d\n", sp.b, sp.b_hat) ;
+		    }
+#endif
 
 
 		if(pData->full_sky_replacement) {
-		    tif_set4c(image,x,y, rhat, ghat, bhat, MAX16);
-		} else {
-		    uint16_t val = (uint16_t)(p_hat * (float)MAX16) ;
+		    tif_set4c(image,x,y, sp.r_hat, sp.g_hat, sp.b_hat, MAX16);
+		} else if(pData->show_sky_prediction) {
+		    uint16_t val = (uint16_t)(sp.p_hat * (float)MAX16) ;
+/*  		    uint16_t val = (uint16_t)(feather_prob * (float)MAX16) ;  */
 		    tif_set4c(image,x,y, val, val, val, MAX16);
-/*  		    tif_set4c(image,x,y, r_err, g_err, b_err, MAX16);  */
-/*  		    tif_set4c(image,x,y, r_err, g_err, b_err, MAX16);  */
-/*  		    tif_set4c(image,x,y, sv_err, sv_err, sv_err, MAX16);  */
+/*  		    uint16_t val = (uint16_t)(hsv_err*MAX16) ;  */
+/*  		    tif_set4c(image,x,y, val, val, val, MAX16);  */
+		} else {
+/*  		    r_err = (uint16_t)(sqrt((float)r_err/(float)MAX16)*(float)MAX16+0.5) ;  */
+/*  		    g_err = (uint16_t)(sqrt((float)g_err/(float)MAX16)*(float)MAX16+0.5) ;  */
+/*  		    b_err = (uint16_t)(sqrt((float)b_err/(float)MAX16)*(float)MAX16+0.5) ;  */
+		    tif_set4c(image,x,y, sp.r_err, sp.g_err, sp.b_err, MAX16);
 		}
 	    }
 

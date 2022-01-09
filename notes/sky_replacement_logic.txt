@@ -1,0 +1,25 @@
+prob_sky = probability it is sky pixel, based only on color
+f_prob = probability it is sky pixel, based on start and end of sky (must be 1.0 at start of sky or there will be a seam)
+sun_prob = probability it is sky pixel, based on distance from center of sun
+p_hat = final proportion of predicted to use
+
+In normal areas (nsrm == 0) {
+   p_hat = max(prob_sky, f_prob) // pixels below depth of fill will be unaltered
+   p_hat = max(p_hat, sun_prob) // sun probability may increase p_hat, even near end of sky
+
+otherwise (nsrm == 1)
+    // only alter pixel if prob_sky is high
+    pos_change = prob_sky ;
+    pos_change *= max(f_prob, sun_prob)
+    p_hat = prob_sky + pos_change
+
+
+( 3-1./(cos(($x+.1)*2.*3.1416)+1.+1./3))/10
+0.5
+.4/(cos(($x+.7)*2.*3.1416)*.5+1.+.35)+.4
+
+
+a*cos(t)+b*sin(t) = sqrt(a*a+b*b)*sin(t + atan(a/b)) ;
+
+By Georg-Johann - Own work  This vector image includes elements that have been taken or adapted from this file: Error function.svg (by Geek3)., CC BY-SA 3.0, https://commons.wikimedia.org/w/index.php?curid=11498624
+

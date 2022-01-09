@@ -25,6 +25,10 @@ struct V3D {
     float A,B,C ;
     } ;
 
+typedef struct rect_extent { uint16_t l,r,t,b; } RECT_EXTENT_t ; // rectangular extent, left, right, top, bottom
+
+
+
 extern struct V3D V_zenith;
 extern struct V3D V_sun;
 
@@ -95,25 +99,39 @@ float sun_x_angle2px(float sun_x_angle) ;
 float find_maximum_CIE_vhat(void) ;
 void set_FOV_factor() ;
 
+// more than 100 and this is probably not a clear enough sky for this app to work
+#define MAX_TEST_MASKS 100
+
 typedef struct skyfill_data 
     {
+    RECT_EXTENT_t test_extent_mask[MAX_TEST_MASKS] ; // skip over these extents for searching end of sky, or repairing bad pixels in the repair_top_of_sky steps
+    int n_test_masks ;
+
     float floatBLK ; // value at which we assume hugin has masked out a portion of the image and placed black there instead of a alpha of 0 ;
     int verbose ;
     int fix_SOS_edges ;  // by default, don't fill missing data on edges around the start of the sky
     int fill_top_of_sky ;  // by default, don't make start of the sky values equal in first stage of repairing the top of sky
     int full_sky_replacement ; // set to 1, will attempt to replace everything down to end of sky, needs df set to 1
+    float full_sky_replacement_thresh ; // threhold at which probability of sky pixel causes replacement of pixels
+    float full_sky_replacement_ramp ; // speed at which probability of sky pixel changes
     float final_saturation_factor ;
     int horizon_was_set ;
     int sat_prediction_method ; // flag to change saturation prediction method for sky
     int full_hsv_model_level ;
-    int val_model_full ; // set to one, will use quadratic term in py for predicting sky value 
+    int val_model_full ; // set to 1, will use quadratic term in py for predicting sky value 
+    int noclip_end_of_sky ; // set to 1, in full sky replacement mode, will replace pixels all the way to end of sky
 
     // global arrays, will indicate what was detected for each column (x) for these values
-    int16_t *start_of_sky, *end_of_sky, *final_end_of_sky, *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
+    int16_t *start_of_sky ;
+    int16_t *end_of_sky ;
+    int16_t *final_end_of_sky ;
+    int16_t *manual_end_of_sky ; // loaded from file "inputfile".eos, if found
+    int16_t *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
 
     // set to 1 to grid search for starting sun and horizon position
     int estimate_only ;
-    int show_raw_prediction ;
+    int show_raw_prediction ; // old model, shows the sky predicted values above the unchanged original image
+    int show_sky_prediction ; // shows probability (greyscale) the pixel is a sky pixel
     int show_raw_error ;
     int CIE_sky_index ; // if 3, will only use CIE coefs to predict given CIE index grid search
     int allowed_sky_type ;
@@ -161,7 +179,8 @@ typedef struct skyfill_data
     float maximum_CIE_vhat ; // maximum vhat in sky dome
     float minimum_CIE_vhat ; // minimum vhat in sky dome
 
-    float value_angle_factor ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
+    float angle_factor ;  // in HSV sky model, this is 1. to 2. => changes the angular rate on the horizontal
+    float valsat_phase_shift ;
 
     int max_end_of_sky ;
     int min_end_of_sky ;
@@ -187,11 +206,47 @@ typedef struct skyfill_data
     unsigned char *column_mask ; // user requested masked columns for any alteration at all
     unsigned char *column_repair_mask ; // user requested masked columns for repair of bad pixels
     unsigned char *column_sample_mask ; // user requested masked columns for sampling of sky pixels
+    unsigned char *column_nonsky_repair_mask ; // user requested masked columns for repair of pixels identified as nonsky
 
 } SKYFILL_DATA_t ;
 
 // one more global
 extern SKYFILL_DATA_t *pData_fit ;
+
+static inline uint16_t is_in_test_mask(int x, int y)
+{
+
+    for(int i=0 ; i< pData_fit->n_test_masks ; i++) {
+
+	if( x >= pData_fit->test_extent_mask[i].l && x <= pData_fit->test_extent_mask[i].r
+	 && y >= pData_fit->test_extent_mask[i].t && y <= pData_fit->test_extent_mask[i].b) {
+	    return 1 ;
+	}
+    }
+
+    return 0 ;
+}
+static inline uint16_t max_test_mask(int x, int y)
+{
+
+    if( pData_fit->column_mask[x] == 1)
+	return IMAGE_HEIGHT ;
+
+    int ymax=y ;
+    for(int i=0 ; i< pData_fit->n_test_masks ; i++) {
+
+	if( x >= pData_fit->test_extent_mask[i].l && x <= pData_fit->test_extent_mask[i].r
+	 && y >= pData_fit->test_extent_mask[i].t && y <= pData_fit->test_extent_mask[i].b) {
+
+	    // x,y is in the extent, is ymax less than the bottom of the extent?
+	    if(ymax < pData_fit->test_extent_mask[i].b)
+		ymax = pData_fit->test_extent_mask[i].b ;
+	}
+    }
+
+    // returns y if pixel is not in extent, bottom of lowest bounding extent if in an extent
+    return ymax ;
+}
 
 
 #define MAX_OPT_PARMS 17

@@ -5,8 +5,10 @@ LIBS=-ltiff -lm
 
 skyfill_tif : $(OBJS) Makefile
 	gcc $(CFLAGS) $(OBJS) $(LIBS) -o skyfill_tif
+
+$(OBJS) : skyfill_tif.h sample_and_fit_sky_model.h feather_factor.h Makefile colorspace_conversions.h
  
-.c.o: Makefile sample_and_fit_sky_model.h
+.c.o:
 	gcc -c $(CFLAGS) $< -o $@
 
 backup:

@@ -11,7 +11,6 @@
 // some shared variables in this module
 static float *sky_hue, *sky_val, *sky_sat  ;
 static uint8_t *is_clear_sky ;
-static int n_sky ;
 
 void simple_find_start_of_sky(int16_t *start_of_sky,uint16_t w,uint16_t h,tdata_t *image, SKYFILL_DATA_t *pData)
 {
@@ -177,6 +176,9 @@ int is_end_of_sky(uint16_t y, int n_samples, float *hdiff, float *sdiff, float *
 
     sum_wgts=0. ;
     for(iy=y+1 ; iy < y+1+n_samples/2. ; iy++) {
+	if(sky_hue[iy] < -0.01) {
+	    fprintf(stderr, "FATAL: sky_hue not computed in is_end_of_sky at y=%d\n", iy) ;
+	}
 	m_hue1 += sky_hue[iy]*is_clear_sky[iy] ;
 	m_sat1 += sky_sat[iy]*is_clear_sky[iy] ;
 	m_val1 += sky_val[iy]*is_clear_sky[iy] ;
@@ -270,7 +272,7 @@ void print_sobel(tdata_t *image, int x, SKYFILL_DATA_t *pData)
     exit(1) ;
 }
 
-int get_sobel_eos(tdata_t *image, int x, SKYFILL_DATA_t *pData)
+int get_hires_eos(tdata_t *image, int x, SKYFILL_DATA_t *pData)
 {
     int y ;
 
@@ -341,17 +343,30 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 {
     int16_t x, y ;
 
+    // is_clear_sky[y] is used as a weight for calculating sky colors in 
+    // is_end_of_sky(), the weight is 0. or 1.
     is_clear_sky = (uint8_t *)calloc(IMAGE_HEIGHT, sizeof(uint8_t)) ;
+    for(y=0; y < IMAGE_HEIGHT ; y++) {
+	is_clear_sky[y]=1 ;
+    }
 
     sky_hue = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
     sky_val = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
     sky_sat = (float *)calloc(IMAGE_HEIGHT, sizeof(float)) ;
 
+    for(int y = 0 ; y < IMAGE_HEIGHT ; y++) {
+	sky_hue[y] = -1. ;
+    }
+
+// if defined, will output some debug info to consol
+/*  #define DEBUG_COL 913  */
+
     // look for end of sky now
 
-    for(x = 0 ; x < w ; x++) {
+    for(x = 0 ; x < IMAGE_WIDTH ; x++) {
 
-	if(pData->column_mask[x] == 1) {
+	int first_valid_y = max_test_mask(x, 0) ;
+	if(first_valid_y >= IMAGE_HEIGHT) {
 	    pData->end_of_sky[x] = 0 ;
 	    continue ;
 	}
@@ -359,7 +374,7 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 	float hdiff, sdiff, vdiff ;
 
 	// start looking at maximum start of sky in local area
-	int first_y = pData->raw_start_of_sky[x] ;
+	int first_y = first_valid_y+1 ;
 	int x0 = x-20 ;
 	if(x0 < 0) x0 = 0 ;
 	int x1 = x+20 ;
@@ -372,9 +387,11 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 		first_y = pData->raw_start_of_sky[dx]  ;
 	}
 
+	// start looking 10 pixels below max raw start of sky in local area
 	first_y += 10 ;
 
 
+#ifdef EOS_STEP1
 	//first_y = end_of_sky[x]-6 ;  // temporarily see how this looks 
 	float top_mean[3], top_var[3] ;
 	float bot_mean[3], bot_var[3] ;
@@ -382,17 +399,33 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 	//fprintf(stderr, "\nNEW EOS x:%5d eos:%5d\n", x, end_of_sky[x]) ;
 
 	for(y = first_y ; y < IMAGE_HEIGHT-10 ; y++) {
-	    get_sky_mean_var(image, x, y-10, 10, top_mean, top_var) ;
-	    get_sky_mean_var(image, x, y+5, 5, bot_mean, bot_var) ;
+	    // compare the mean value of the previous 10 pixels,
+	    // to the  mean value of the next 5 pixels
+
+	    int n_prev = y - pData->raw_start_of_sky[x] ;
+	    if(n_prev > 20) n_prev=20 ;
+
+	    get_sky_mean_var(image, x, y-n_prev, n_prev, top_mean, top_var) ;
+
+	    get_sky_mean_var(image, x, y, 5, bot_mean, bot_var) ;
 	    float rr = fabs(top_mean[0]/bot_mean[0]-1.) ;
 	    float rg = fabs(top_mean[1]/bot_mean[1]-1.) ;
 	    float rb = fabs(top_mean[2]/bot_mean[2]-1.) ;
+#ifdef DEBUG_COL
+	    if(x == DEBUG_COL) {
+		fprintf(stderr, "x:%d, y:%5d n_prev:%2d rr,rg,rb = %5.2f %5.2f %5.2f\n", x, y, n_prev, rr, rg, rb) ;
+	    }
+#endif
 
 	    // do we have the same color above and below the test area?
 	    if(rr > .1 || rg > .1 || rb > .1) {
+		// no, colors are too different.  But mark sky as clear
+		// for this and all pixels below so they can be used
+		// in the next step for calculating sky hsv values
 		for(; y < IMAGE_HEIGHT-10 ; y++) {
 		    is_clear_sky[y]=1 ;
 		}
+		// break out of the loop -- last_y
 		break ;
 	    }
 
@@ -405,93 +438,163 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 	    if(a < HALF16) break ;
 	    if( r < BLK16 && g < BLK16 && b < BLK16 ) break ;
 
-	    int last_y = y ;
 
 
-	    for(int y0 = y ; y0 < y+5 ; y0++) {
-		// try to skip small highlights (jet trails) in sky
-		tif_get3c(image,x,y,r,g,b) ;
+	    // try to skip small highlights (jet trails) in sky
+	    if(0) {
+		int y1 = y+5 ;
+		for(int y0 = y ; y0 < y1 ; y0++) {
+		    tif_get3c(image,x,y0,r,g,b) ;
 
-		float rtop=(float)r/top_mean[0] ;
-		float gtop=(float)g/top_mean[1] ;
-		float btop=(float)b/top_mean[2] ;
-		float rbot=(float)r/bot_mean[0] ;
-		float gbot=(float)g/bot_mean[1] ;
-		float bbot=(float)b/bot_mean[2] ;
+		    float rtop=(float)r/top_mean[0] ;
+		    float gtop=(float)g/top_mean[1] ;
+		    float btop=(float)b/top_mean[2] ;
+		    float rbot=(float)r/bot_mean[0] ;
+		    float gbot=(float)g/bot_mean[1] ;
+		    float bbot=(float)b/bot_mean[2] ;
 
-		if( rtop > 1. && gtop > 1. && btop > 1. && rbot > 1. && gbot > 1. && bbot > 1.) {
-		    is_clear_sky[y0] = 0 ;
-		    last_y = y0 ;
-		} else {
-		    is_clear_sky[y0] = 1 ;
+		    if( rtop > 1. && gtop > 1. && btop > 1. && rbot > 1. && gbot > 1. && bbot > 1.) {
+			// pixel at y0 is brighter than pixels above and below it
+			// mark it as not clear, and set y to y0 to prevent algorithm
+			// from marking is_clear_sky[y] to 1 in the next iteration of the outer loop
+			is_clear_sky[y0] = 0 ;
+			y = y0 ;
+		    } else {
+			is_clear_sky[y0] = 1 ;
+		    }
 		}
 	    }
 
-	    y = last_y ;
+#ifdef DEBUG_COL
+	    if(x == DEBUG_COL) printf("x:%d y:%d max_test_mask:%d\n", x, y, max_test_mask(x,y)) ;
+#endif
+	    y = max_test_mask(x, y)+1 ;
 
 	}
+
+#ifdef DEBUG_COL
+	    if(x == DEBUG_COL)
+		printf("\n") ;
+#endif
+
+// STEP1
+#endif
 
 
 	// load up arrays
 
-	for(y = first_y ; y < first_y+10 ; y++) {
+	for(y = first_y ; y < first_y+20 ; y++) {
 	    uint16_t r,g,b ;
 	    tif_get3c(image,x,y,r,g,b) ;
 
 	    float h,s,v ;
 	    rgb2hsv16(r,g,b,&h,&s,&v) ;
 	    float l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
-	    sky_hue[y] = h ;
-	    sky_sat[y] = s ;
-	    sky_val[y] = l ;
+
+	    // any areas to skip because of a test mask get the hsl of the previous valid y
+	    int next_valid_y = max_test_mask(x, y)+1 ;
+	    for(int y0 = y ; y0 < next_valid_y ; y0++) {
+		if(y0 == IMAGE_HEIGHT) break ;
+		sky_hue[y0] = h ;
+		sky_sat[y0] = s ;
+		sky_val[y0] = l ;
+
+#ifdef DEBUG_COL
+		if(x == DEBUG_COL) {
+		    fprintf(stderr, "x:%d, y:%5d PRELOAD load hsl of  = %5.2f %5.2f %5.2f\n", x, y0, sky_hue[y0],sky_sat[y0],sky_val[y0]) ;
+		}
+#endif
+	    }
+
+	    y = next_valid_y-1 ;
 	}
 
-	for(y = first_y ; y < h-10 ; y++) {
-	    end_of_sky[x] = y+4 ;
+	for(y = first_y+4 ; y < IMAGE_HEIGHT-10 ; y++) {
+	    end_of_sky[x] = y ;
+	    int end_flag = is_end_of_sky(y,5,&hdiff,&sdiff,&vdiff,pData) ;
 
-	    if(is_end_of_sky(y+4,5,&hdiff,&sdiff,&vdiff,pData)) {
+	    if(end_flag) {
+		int y0 = y-4 ;
+
+		if(y0 < pData->raw_start_of_sky[x])
+		    y0 = pData->raw_start_of_sky[x] ;
+
+		for(int testy = y0 ; testy <= y ; testy++) {
+		    if(is_in_test_mask(x,testy)) {
+			// end of sky cannot happen in masked area
+			end_flag=0 ;
+		    }
+		}
+	    }
+
+#ifdef DEBUG_COL
+	    if(x == DEBUG_COL) {
+		fprintf(stderr, "x:%d, y:%5d end_flag:%2d hdiff,sdiff,vdiff = %5.2f %5.2f %5.2f\n", x, y, end_flag, hdiff,sdiff,vdiff) ;
+	    }
+#endif
+
+	    if(end_flag) {
 		break ;
 	    }
 
-	    uint16_t r,g,b ;
-	    tif_get3c(image,x,y+10,r,g,b) ;
+	    // need to get the hsl for y+10 ;
+	    if(is_in_test_mask(x,y+10)) {
+		sky_hue[y+10] = sky_hue[y+9] ;
+		sky_sat[y+10] = sky_sat[y+9] ;
+		sky_val[y+10] = sky_val[y+9] ;
+#ifdef DEBUG_COL
+		if(x == DEBUG_COL) {
+		    fprintf(stderr, "x:%d, y:%5d MASK LOAD hsl of  = %5.2f %5.2f %5.2f\n", x, y+10, sky_hue[y+10],sky_sat[y+10],sky_val[y+10]) ;
+		}
+#endif
+	    } else {
+		uint16_t r,g,b ;
+		tif_get3c(image,x,y+10,r,g,b) ;
 
-	    float h,s,v ;
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
-	    float l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
-	    sky_hue[y+10] = h ;
-	    sky_sat[y+10] = s ;
-	    sky_val[y+10] = l ;
+		float h,s,v ;
+		rgb2hsv16(r,g,b,&h,&s,&v) ;
+		float l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
+		sky_hue[y+10] = h ;
+		sky_sat[y+10] = s ;
+		sky_val[y+10] = l ;
+#ifdef DEBUG_COL
+		if(x == DEBUG_COL) {
+		    fprintf(stderr, "x:%d, y:%5d INC LOAD hsl of  = %5.2f %5.2f %5.2f\n", x, y+10, sky_hue[y+10],sky_sat[y+10],sky_val[y+10]) ;
+		}
+#endif
+	    }
+
 	}
 
 	// fine tune the detection -- increase y as long as vdiff becomes larger
 	float vdiff_prev=vdiff ;
 
-	for(y = pData->end_of_sky[x]+1 ; y < h-10 ; y++) {
-	    uint16_t r,g,b ;
-	    tif_get3c(image,x,y+5,r,g,b) ;
+	for(y = pData->end_of_sky[x]+1 ; y < IMAGE_HEIGHT-10 ; y++) {
 
-	    float h,s,v ;
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
+	    if(is_in_test_mask(x,y+5)) {
+		sky_hue[y+5] = sky_hue[y+4] ;
+		sky_sat[y+5] = sky_sat[y+4] ;
+		sky_val[y+5] = sky_val[y+4] ;
+	    } else {
+		uint16_t r,g,b ;
+		tif_get3c(image,x,y+5,r,g,b) ;
 
-	    float l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
-	    sky_hue[y+5] = h ;
-	    sky_sat[y+5] = s ;
-	    sky_val[y+5] = l ;
+		float h,s,v ;
+		rgb2hsv16(r,g,b,&h,&s,&v) ;
 
-	    tif_get3c(image,x,y+6,r,g,b) ;
-
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
-
-	    l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
-	    sky_hue[y+6] = h ;
-	    sky_sat[y+6] = s ;
-	    sky_val[y+6] = l ;
+		float l = (.299*(float)r+.587*(float)g+.114*(float)b)/MAX16f ;
+		sky_hue[y+5] = h ;
+		sky_sat[y+5] = s ;
+		sky_val[y+5] = l ;
+	    }
 
 	    is_end_of_sky(y,5,&hdiff,&sdiff,&vdiff,pData) ;
 
-	    //if(x == 232)
-		//printf("fty:sdiff:vdiff %d:%f:%f\n", y, sdiff, vdiff) ;
+#ifdef DEBUG_COL
+	    if(x == DEBUG_COL) {
+		fprintf(stderr, "Fine tune x:%d, y:%5d vdiff, vdiff_prev = %5.2f %5.2f\n", x, y, vdiff,vdiff_prev) ;
+	    }
+#endif
 
 	    if(vdiff <= vdiff_prev)
 		break ;
@@ -502,11 +605,11 @@ void find_end_of_sky(int16_t *end_of_sky,int16_t *start_of_sky,int w,int h,tdata
 	}
 
 	pData->end_of_sky[x]-=2 ;
-	pData->end_of_sky[x] = get_sobel_eos(image,x,pData) ;
+	pData->end_of_sky[x] = get_hires_eos(image,x,pData) ;
     }
 
     //look for and fix slivers
-    fix_slivers=0 ;
+    fix_slivers=1 ;
     while(fix_slivers >0) {
 	fprintf(stderr, "Fixing slivers\n") ;
 

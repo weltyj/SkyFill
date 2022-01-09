@@ -711,13 +711,13 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 	}
     }
 
-    if(phase == 4) {
+    if(0 && phase == 4) {
 	double rcoef[4], gcoef[4], bcoef[4] ;
 
 	fprintf(stderr, "RTOS first scan for bad pixels in top 5 pixels of sky\n") ;
 
 
-	// are there wrong pixels in the top 50 % of the sky?
+	// are there wrong pixels in the top 5 of the sky?
 
 	int xc = 0 ;
 	while(1) {
@@ -728,7 +728,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 		break ;
 
 	    int search_width = 5 ;
-	    int yc = pData->start_of_sky[xc] ;
+	    int yc = pData->start_of_sky[xc]+5 ;
 
 	    int n_repaired = get_mean_rgb(image,xc,yc,rcoef,gcoef,bcoef,search_width,end_of_sky_is_known_flag,1,1, pData) ;
 
