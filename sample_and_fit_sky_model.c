@@ -13,6 +13,10 @@
 #include "sample_and_fit_sky_model.h"
 #include "amoeba_06.h"
 
+void output_model_results(int n_samples, SKYFILL_DATA_t *pData) ;
+void initialize_sample(int n_samples, uint16_t x, uint16_t y, float px, float py, uint16_t r, uint16_t g, uint16_t b, float h, float s, float v) ;
+void find_sky_outliers(int n_samples) ;
+
 struct sample_point *samples = NULL ;
 int n_samples_to_optimize = 0 ;
 
@@ -1068,16 +1072,54 @@ void fit_sky_model(SKYFILL_DATA_t *pData, int n_samples)
     }
 }
 
+void fit_sky_model_step1(int n_samples, SKYFILL_DATA_t *pData)
+{
+    fprintf(stderr, "Fit models\n") ;
+    // for this processing, do not consider localized sun image.
+    int save_uses_CIE_model = uses_CIE_model ;
+    uses_CIE_model = 0 ;
+
+    fit_sky_model(pData, n_samples) ;
+
+    // is the top of the sky too dark, and the full value model used?, if so try the
+    // reduced value model
+
+#ifdef NEED_ANOTHER_IDEA
+    if(pData->val_model_full == 1) {
+	int n_failed=0 ;
+	for(float px = -0.5 ; px < 0.505 ; px += .01) {
+	    int x = IMAGE_RELATIVE_TO_PIXEL_X(px) ;
+	    float py_mid = IMAGE_PIXEL_Y_TO_RELATIVE(end_of_sky[x]/2.) ;
+	    float hhat_top, shat_top, vhat_top ;
+	    float hhat_mid, shat_mid, vhat_mid ;
+	    // estimate hsv, will used blended model if requested
+	    predict_sky_hsv(px, 1.0, &hhat_top, &shat_top, &vhat_top) ;
+	    predict_sky_hsv(px, py_mid, &hhat_mid, &shat_mid, &vhat_mid) ;
+
+
+	    if(vhat_top < 100./255 && vhat_top < vhat_mid) n_failed++ ;
+	}
+
+	if(n_failed > 10) {
+	    fprintf(stderr, "\n*******************************************************************************\n") ;
+	    fprintf(stderr, "********** TOP OF SKY IS TOO DARK, changing to reduced value model  ***********\n") ;
+	    fprintf(stderr, "*******************************************************************************\n\n") ;
+
+	    pData->val_model_full = 0 ;
+	    fit_sky_model(pData, n_samples) ;
+	}
+    }
+#endif
+
+    uses_CIE_model = save_uses_CIE_model ;
+}
+
 int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData)
 {
     int x, y ;
     float mean_column_length ;
     float sum_column_lengths=0. ;
     int n_columns_in_sum=0 ;
-
-    // for this processing, do not consider localized sun image.
-    int save_uses_CIE_model = uses_CIE_model ;
-    uses_CIE_model = 0 ;
 
     V_sun= image_relative_pixel_to_V3_noclip(sun_x_angle2px(pData->sun_x), pData->sun_py) ;
 
@@ -1091,6 +1133,7 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 
     mean_column_length = sum_column_lengths/(float)n_columns_in_sum ;
 
+#define MAX_SAMPLES 1100
     // try to get 1000 sample points, each will be a mean of a 5x5 area around the actual point
     // do this with a rectangular grid over the image area, refining the grid to the sky area only
 
@@ -1142,7 +1185,7 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	// want to get close to end of sky since the sky changes most near end of sky
 	for(y = end_of_sky[x] - 6 ; y > start_of_sky[x]+3 ; y -= dy) {
 
-/*  	for(y=0 ; y < IMAGE_HEIGHT ; y += dy) {  */
+/*  	for(y=0 ; y < IMAGE_HEIGHT ; y += dy) BRACKET  */
 /*    */
 /*  	    if(y < pData->start_of_sky[x] || y > pData->end_of_sky[x]) continue ;  */
 
@@ -1204,23 +1247,7 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	    float h,s,v ;
 	    rgb2hsv16(r,g,b,&h,&s,&v) ;
 
-	    samples[n_samples].x = x ;
-	    samples[n_samples].y = y ;
-	    samples[n_samples].px = px ;
-	    samples[n_samples].py = py ;
-	    samples[n_samples].r = r ;
-	    samples[n_samples].g = g ;
-	    samples[n_samples].b = b ;
-	    samples[n_samples].abs_error[0] = 1. ;
-	    samples[n_samples].abs_error[1] = 1. ;
-	    samples[n_samples].is_outlier = 0 ;
-
-	    samples[n_samples].h = h ;
-	    samples[n_samples].s = s ;
-	    samples[n_samples].v = v ;
-	    samples[n_samples].sum_dist2_sv=0. ;
-	    samples[n_samples].sum_dist2_vy=0. ;
-	    samples[n_samples].n_close_neighbors=0 ;
+	    initialize_sample(n_samples, x, y, px, py, r, g, b, h, s, v) ;
 
 	    float wgt = (1.-s)*PX_WGT(px) ;
 
@@ -1238,89 +1265,22 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	//fprintf(stderr, "column %d, h=%f, s=%f, v=%f\n", x, sum_h/sum_n, sum_s/sum_n, sum_v/sum_n) ;
     }
 
-    fprintf(stderr, "Finding outliers...\n") ;
+    find_sky_outliers(n_samples) ;
 
-    // outlier detection -- compute mean distances to all other points
-    for(int i = 0 ; i < n_samples-1 ; i++) {
-	for(int j=i+1 ; j < n_samples ; j++) {
-	    float ds = samples[i].s - samples[j].s ;
-	    float dv = samples[i].v - samples[j].v ;
-	    float dy = samples[i].py - samples[j].py ;
-	    float dist_sv = ds*ds + dv*dv ;
-	    float dist_vy = dy*dy + dv*dv ;
-	    if(dist_sv < .1 && dist_vy < .1) {
-/*  		samples[i].sum_dist2_sv += ds*ds + dv*dv ;  */
-/*  		samples[i].sum_dist2_vy += dy*dy + dv*dv ;  */
-/*  		samples[j].sum_dist2_sv += ds*ds + dv*dv ;  */
-/*  		samples[j].sum_dist2_vy += dy*dy + dv*dv ;  */
-		samples[i].n_close_neighbors++ ;
-		samples[j].n_close_neighbors++ ;
-	    }
-	}
-    }
-
-    float sum_close=0. ;
-    float sum_close2=0. ;
-
-    for(int i = 0 ; i < n_samples ; i++) {
-	sum_close += (float)samples[i].n_close_neighbors ;
-	sum_close2 += (float)samples[i].n_close_neighbors * (float)samples[i].n_close_neighbors ;
-    }
-
-    float N=n_samples ;
-
-    float mean_close = sum_close/N ;
-
-    float sd_close = sqrt( 1./(N-1.)*sum_close2 - 1./(N*(N-1.)) * sum_close*sum_close ) ;
-
-    // put classic Z score in sum_dist2
-    for(int i = 0 ; i < n_samples ; i++) {
-	samples[i].sum_dist2_sv = mean_close-(float)samples[i].n_close_neighbors ;
-	samples[i].sum_dist2_sv /= sd_close ;
-
-	samples[i].sum_dist2_sv = (float)samples[i].n_close_neighbors ;
-
-	samples[i].sum_dist2_vy = samples[i].sum_dist2_sv ;
-
-	if(samples[i].n_close_neighbors < 125)
-	    samples[i].is_outlier = 255 ;
-    }
-
-    fprintf(stderr, "Fit models\n") ;
 
     pData->hue_sky = sum_hue/sum_hue_wgts ;
     pData->sat_sky = sum_sat/sum_sat_wgts ;
     pData->val_sky = sum_val/sum_val_wgts ;
 
-    fit_sky_model(pData, n_samples) ;
+    fit_sky_model_step1(n_samples, pData) ;
 
-    // is the top of the sky too dark, and the full value model used?, if so try the
-    // reduced value model
+    output_model_results(n_samples, pData) ;
 
-    if(pData->val_model_full == 1) {
-	int n_failed=0 ;
-	for(float px = -0.5 ; px < 0.505 ; px += .01) {
-	    int x = IMAGE_RELATIVE_TO_PIXEL_X(px) ;
-	    float py_mid = IMAGE_PIXEL_Y_TO_RELATIVE(end_of_sky[x]/2.) ;
-	    float hhat_top, shat_top, vhat_top ;
-	    float hhat_mid, shat_mid, vhat_mid ;
-	    // estimate hsv, will used blended model if requested
-	    predict_sky_hsv(px, 1.0, &hhat_top, &shat_top, &vhat_top) ;
-	    predict_sky_hsv(px, py_mid, &hhat_mid, &shat_mid, &vhat_mid) ;
+    return n_samples ;
+}
 
-
-	    if(vhat_top < 100./255 && vhat_top < vhat_mid) n_failed++ ;
-	}
-
-	if(n_failed > 10) {
-	    fprintf(stderr, "\n*******************************************************************************\n") ;
-	    fprintf(stderr, "********** TOP OF SKY IS TOO DARK, changing to reduced value model  ***********\n") ;
-	    fprintf(stderr, "*******************************************************************************\n\n") ;
-
-	    pData->val_model_full = 0 ;
-	    fit_sky_model(pData, n_samples) ;
-	}
-    }
+void output_model_results(int n_samples, SKYFILL_DATA_t *pData)
+{
 
     fprintf(stderr, "*******************  CALCULATED PHASE SHIFT, horizon curvature %3.0f, %4.2f*************************\n",
 	    pData->valsat_phase_shift, pData->horizon_curvature) ;
@@ -1389,11 +1349,6 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 	predict_sky_hsv(samples[i].px, samples[i].py, &h_hat, &s_hat, &v_hat) ;
 	hsv2rgb16(h_hat,s_hat,v_hat,&r_hat,&g_hat,&b_hat) ;
 	float angle = pData->FOV_horizontal*samples[i].px ;
-/*  	float py_hc = py_adjusted_for_horizon_curvature(samples[i].px, samples[i].py) ;  */
-
-	// temporarily replace v with intensity
-/*  	samples[i].v = (float)(samples[i].r+samples[i].b+samples[i].g)/3./(float)MAX16 ;  */
-/*  	v_hat = (float)(r_hat+b_hat+g_hat)/3./(float)MAX16 ;  */
 
 	//fprintf(fp, "%6.4f %6.4f", samples[i].px, samples[i].py+samples[i].px/50.) ;
 	fprintf(fp, "%6.4f %6.4f", samples[i].px, samples[i].py) ;
@@ -1407,19 +1362,113 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
     }
 
     fclose(fp) ;
-    uses_CIE_model = save_uses_CIE_model ;
+}
 
+int read_samples_and_fit_model(char *samplefile, SKYFILL_DATA_t *pData)
+{
+
+    FILE *fp = fopen(samplefile, "r") ;
+    int n_samples=0 ;
+    float px,py,h,s,v,h_hat,s_hat,v_hat,h_err,s_err,v_err,angle,n_close,n_close2 ;
+
+    if(fp != NULL) {
+	fprintf(stderr, "Reading sample data from %s\n", samplefile) ;
+
+	if(samples == NULL) {
+	    samples = (struct sample_point *) calloc(MAX_SAMPLES*2, sizeof(struct sample_point)) ;
+	}
+
+	while( fscanf(fp, "%f %f %f %f %f %f %f %f %f %f %f %f %f %f",
+	    &px,&py,&h,&s,&v,&h_hat,&s_hat,&v_hat,&h_err,&s_err,&v_err,&angle,&n_close,&n_close2) == 14) {
+
+	    pData->FOV_horizontal = angle / px ;
+
+	    initialize_sample(n_samples, 0, 0, px, py, 0, 0, 0, h, s, v) ;
+	    n_samples++ ;
+	}
+	fprintf(stderr, "Read %d samples from %s\n", n_samples, samplefile) ;
+
+	fclose(fp) ;
+
+	fit_sky_model_step1(n_samples, pData) ;
+
+	output_model_results(n_samples, pData) ;
+    } else {
+	fprintf(stderr, "Could not open %s\n", samplefile) ;
+    }
+
+}
+
+void find_sky_outliers(int n_samples)
+{
+
+    fprintf(stderr, "Finding outliers...\n") ;
+
+    // outlier detection -- compute mean distances to all other points
+    for(int i = 0 ; i < n_samples-1 ; i++) {
+	for(int j=i+1 ; j < n_samples ; j++) {
+	    float ds = samples[i].s - samples[j].s ;
+	    float dv = samples[i].v - samples[j].v ;
+	    float dy = samples[i].py - samples[j].py ;
+	    float dist_sv = ds*ds + dv*dv ;
+	    float dist_vy = dy*dy + dv*dv ;
+	    if(dist_sv < .1 && dist_vy < .1) {
+/*  		samples[i].sum_dist2_sv += ds*ds + dv*dv ;  */
+/*  		samples[i].sum_dist2_vy += dy*dy + dv*dv ;  */
+/*  		samples[j].sum_dist2_sv += ds*ds + dv*dv ;  */
+/*  		samples[j].sum_dist2_vy += dy*dy + dv*dv ;  */
+		samples[i].n_close_neighbors++ ;
+		samples[j].n_close_neighbors++ ;
+	    }
+	}
+    }
+
+/*      float sum_close=0. ;  */
+/*      float sum_close2=0. ;  */
+/*    */
 /*      for(int i = 0 ; i < n_samples ; i++) {  */
-/*  	float hhat, shat, vhat ;  */
-/*  	predict_sky_hsv(samples[i].px, samples[i].py, &hhat, &shat, &vhat) ;  */
-/*  	float angle = pData->FOV_horizontal*samples[i].px ;  */
-/*    */
-/*  	fprintf(stderr, "%6.4f %6.4f %5.3f\n", samples[i].px, samples[i].py+samples[i].px/50., vhat) ;  */
-/*    */
+/*  	sum_close += (float)samples[i].n_close_neighbors ;  */
+/*  	sum_close2 += (float)samples[i].n_close_neighbors * (float)samples[i].n_close_neighbors ;  */
 /*      }  */
 /*    */
-/*      fprintf(stderr, "sample points, sky hsv=%f,%f,%f\n", pData->hue_sky, pData->sat_sky, pData->val_sky) ;  */
-/*      exit(1) ;  */
+/*      float N=n_samples ;  */
+/*    */
+/*      float mean_close = sum_close/N ;  */
+/*    */
+/*      float sd_close = sqrt( 1./(N-1.)*sum_close2 - 1./(N*(N-1.)) * sum_close*sum_close ) ;  */
 
-    return n_samples ;
+    // put classic Z score in sum_dist2
+    for(int i = 0 ; i < n_samples ; i++) {
+/*  	samples[i].sum_dist2_sv = mean_close-(float)samples[i].n_close_neighbors ;  */
+/*  	samples[i].sum_dist2_sv /= sd_close ;  */
+
+	// let sum_dist2_sv hold the n_close_neighbors value so it will available to make a plot with gnuplot
+	samples[i].sum_dist2_sv = (float)samples[i].n_close_neighbors ;
+
+	samples[i].sum_dist2_vy = samples[i].sum_dist2_sv ;
+
+	if(samples[i].n_close_neighbors < 125)
+	    samples[i].is_outlier = 255 ;
+    }
+}
+
+void initialize_sample(int n_samples, uint16_t x, uint16_t y, float px, float py, uint16_t r, uint16_t g, uint16_t b, float h, float s, float v)
+{
+	    samples[n_samples].x = x ;
+	    samples[n_samples].y = y ;
+	    samples[n_samples].px = px ;
+	    samples[n_samples].py = py ;
+	    samples[n_samples].r = r ;
+	    samples[n_samples].g = g ;
+	    samples[n_samples].b = b ;
+	    samples[n_samples].abs_error[0] = 1. ;
+	    samples[n_samples].abs_error[1] = 1. ;
+	    samples[n_samples].is_outlier = 0 ;
+
+	    samples[n_samples].h = h ;
+	    samples[n_samples].s = s ;
+	    samples[n_samples].v = v ;
+	    samples[n_samples].sum_dist2_sv=0. ;
+	    samples[n_samples].sum_dist2_vy=0. ;
+	    samples[n_samples].n_close_neighbors=0 ;
 }

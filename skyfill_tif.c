@@ -123,7 +123,7 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->horizon_py = .5 ;
     pData->hue_horizon = 200 ; // not used
     pData->sat_depth = 1.0 ;
-    pData->sky_lum=.9 ;
+    pData->sun_lum=.9 ;
 
     // as determined from the sample points
     pData->hue_sky = 212 ;
@@ -178,7 +178,7 @@ void fill_opt_parms(SKYFILL_DATA_t *p)
 	{&p->hue_sky, "hs", "hue sky", 212., 180., 250., 1, 0, "Hue from HSV model", 0, 0},
 	{&p->hue_horizon, "hh", "hue_horizon", 212., 180., 250., 1, 0, "Horizon hue, not currenly used", 0, 0},
 	{&p->sat_depth, "sd", "sat_depth", .8, 0.01, 1.1, 1, 1, "Amount of saturation to apply, 0 to 1", 0, 0},
-	{&p->sky_lum, "sl", "sky_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sky intensity", 0, 0},
+	{&p->sun_lum, "sl", "sun_lum", 1., 0.01, 20.1, 1, 1, "Factor applied to predicted sun intensity", 0, 0},
 	{&p->FOV_horizontal, "fov", "FOV_horizontal", 90., 1., 360., 1, 0, "The horizontal field of view of the image, degrees", 0, 0},
 	{&p->perez_A, "A", "perez_A", .001, -5., 5., 1, 0, "The A parameter of the perez CIE sky model", 0, 1},
 	{&p->perez_B, "B", "perez_B", -1., -10., -0.001, 1, 0, "The B parameter of the perez CIE sky model", 0, 1},
@@ -560,19 +560,20 @@ void predict_sky_huesat_from_val(float vhat_CIE_sun, float *pH, float *pS, float
 	// bring the sun value back to absolute brightness
 	vhat_CIE_sun *= pData_fit->maximum_CIE_vhat ;
 
-	if(pData_fit->sky_lum > 0.) {
+	if(pData_fit->sun_lum > 0.) {
 	    // vhat_CIE_sun now runs between max and min, want to scale it to 0.5 to 0.0
-	    float vhat_add = pData_fit->sky_lum*(vhat_CIE_sun - pData_fit->minimum_CIE_vhat)/(pData_fit->maximum_CIE_vhat-pData_fit->minimum_CIE_vhat) ;
+	    float vhat_add = pData_fit->sun_lum*(vhat_CIE_sun - pData_fit->minimum_CIE_vhat)/(pData_fit->maximum_CIE_vhat-pData_fit->minimum_CIE_vhat) ;
 
 	    if(vhat_add < 0.0) vhat_add = 0.0 ;
 
 	    vhat_final = vhat_add + vhat_raw ;
-	    shat -= vhat_add ;
+	    shat -= vhat_add/2. ;
 
 	} else {
 	    // vhat_CIE_sun now runs between max and min, want to scale it to 0.5 to 0.0
-	    // since sky_lum is < 0, use -sky_lum and only display CIE vhat
-	    float vhat_add = -pData_fit->sky_lum*(vhat_CIE_sun - pData_fit->minimum_CIE_vhat)/(pData_fit->maximum_CIE_vhat-pData_fit->minimum_CIE_vhat) ;
+	    // since sun_lum is < 0, use -sun_lum and only display CIE vhat
+	    // only for testing...
+	    float vhat_add = -pData_fit->sun_lum*(vhat_CIE_sun - pData_fit->minimum_CIE_vhat)/(pData_fit->maximum_CIE_vhat-pData_fit->minimum_CIE_vhat) ;
 
 	    if(vhat_add < 0.0) vhat_add = 0.0 ;
 	    vhat_final = vhat_add ;
@@ -922,6 +923,19 @@ int main(int argc, char* argv[])
 
     if(argc < 3)
 	usage("Input or output file not specified", "") ;
+
+    if(! strcmp(argv[1], "-fit") ) {
+	// read previous data from input file, fit the sky model and exit
+	char samplefile[512] ;
+	strcpy(samplefile, argv[2]) ;
+	if(! strcmp("samples.dat", samplefile) ) {
+	    fprintf(stderr, "For fitting, input sample file must not be \'samples.dat\'\n") ;
+	    exit(1) ;
+	}
+
+	read_samples_and_fit_model(samplefile,pData) ;
+	exit(0) ;
+    }
 
     // strip final \n off the last input argument
     {

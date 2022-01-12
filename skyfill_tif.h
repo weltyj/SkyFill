@@ -162,7 +162,7 @@ typedef struct skyfill_data
 
     // horizon_py is at x=0 ;
     float sun_x, sun_py, horizon_py ;
-    float hue_horizon, sat_depth, sky_lum ;
+    float hue_horizon, sat_depth, sun_lum ;
 
     // as determined from the sample points
     float hue_sky ;

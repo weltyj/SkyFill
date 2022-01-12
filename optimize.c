@@ -162,7 +162,7 @@ float optimize_grid(int n_samples, int verbose, int allowed_sky_type, int CIE_sk
     autoset_lumf_flag=1 ;
     for(i=0 ; i < MAX_OPT_PARMS ; i++) {
 	if(opt_parms[i].grid_optimize_flag == 0) {
-	    if(!strcmp(opt_parms[i].name, "sky_lum")) {
+	    if(!strcmp(opt_parms[i].name, "sun_lum")) {
 		autoset_lumf_flag=0 ;
 	    }
 	}
@@ -223,7 +223,7 @@ float smart_optimize_function(float *pParams)
 
 void smart_optimize(int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[])
 {
-    float guess[MAX_OPT_PARMS+1] = {0,pData->sun_x,pData->sun_py,pData->sky_lum,pData->horizon_py,pData->perez_A,
+    float guess[MAX_OPT_PARMS+1] = {0,pData->sun_x,pData->sun_py,pData->sun_lum,pData->horizon_py,pData->perez_A,
 				pData->perez_B,pData->perez_C,pData->perez_D,pData->perez_E,pData->perez_F,pData->perez_G,pData->FOV_horizontal} ;
     float guess_delta[MAX_OPT_PARMS+1], c_lo[MAX_OPT_PARMS+1], c_hi[MAX_OPT_PARMS+1] ;
     int i ;

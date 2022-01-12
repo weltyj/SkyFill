@@ -240,5 +240,6 @@ float fit_full_HSV_model(int n_samples, int location_index, int calc_error, SKYF
 void reset_sample_errors(int n_samples) ;
 
 int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData) ;
+int read_samples_and_fit_model(char *samplefile, SKYFILL_DATA_t *pData) ;
 
 #endif
