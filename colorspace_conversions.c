@@ -8,7 +8,7 @@
 #define min_f(a, b, c)  (fminf(a, fminf(b, c)))
 #define max_f(a, b, c)  (fmaxf(a, fmaxf(b, c)))
 
-#define V_IS_REALLY_I
+#define not_V_IS_REALLY_I
 #ifdef V_IS_REALLY_I
 // The call is still ...hsv..., but the color model is HSI
 void rgb2hsv16(const uint16_t src_r, const uint16_t src_g, const uint16_t src_b, float *H, float *S, float *I)

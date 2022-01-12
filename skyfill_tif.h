@@ -120,6 +120,7 @@ typedef struct skyfill_data
     int full_hsv_model_level ;
     int val_model_full ; // set to 1, will use quadratic term in py for predicting sky value 
     int noclip_end_of_sky ; // set to 1, in full sky replacement mode, will replace pixels all the way to end of sky
+    int repair_sky_slope_correct ;  // normally 1, set to 0 turnss of slope correction at the top of raw sky
 
     // global arrays, will indicate what was detected for each column (x) for these values
     int16_t *start_of_sky ;

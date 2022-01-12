@@ -6,8 +6,8 @@ set view map
 set autoscale
 set parametric
 set style data points
-# 1  2 3 4 5 6    7    8    9    10   11   12    13
-#px py h s v hhat shat vhat herr serr verr angle log(py)
+# 1  2 3 4 5 6    7    8    9    10   11   12    13        14
+#px py h s v hhat shat vhat herr serr verr angle sumdistsv sumdistvy
 set key box
 set terminal pngcairo size 800,600 enhanced font 'Verdana,10'
 
@@ -15,15 +15,27 @@ set terminal pngcairo size 800,600 enhanced font 'Verdana,10'
 #set output 'samples_s3val.png'
 #splot "samples.dat" u 3:7:2 with points palette pointsize 1 pointtype 7
 
+set title 'sumdist2 SV vs sumdist2 VY'
+set output 'samples_outlier.png'
+plot "samples.dat" u 14:13 with points pointsize 1 pointtype 7
+
 set title 'Actual Saturation vs Value, colored by py'
 set output 'samples_s_vs_I.png'
 splot "samples.dat" u 5:4:2 with points palette pointsize 1 pointtype 7
 
-set title 'py vs px, colored by hue error'
+set title 'hue err vs predicted hue, colored by py'
 set output 'samples_h3err.png'
-splot "samples.dat" u 1:2:9 with points palette pointsize 1 pointtype 7
+splot "samples.dat" u 6:9:2 with points palette pointsize 1 pointtype 7
 
-set yrange [180:230]
+set title 'sat err vs predicted sat, colored by py'
+set output 'samples_s3err.png'
+splot "samples.dat" u 7:10:2 with points palette pointsize 1 pointtype 7
+
+set title 'val err vs py, colored by predicted val'
+set output 'samples_v3err.png'
+splot "samples.dat" u 2:11:8 with points palette pointsize 1 pointtype 7
+
+set yrange [120:230]
 set title 'Hue vs py, colored by px'
 set output 'samples_h3pya.png'
 splot "samples.dat" u 2:3:1 with points palette pointsize 1 pointtype 7
@@ -39,6 +51,14 @@ splot "samples.dat" u 2:6:1 with points palette pointsize 1 pointtype 7
 set title 'Predicted Hue vs horizontal angle, colored by py'
 set output 'samples_h3pxp.png'
 splot "samples.dat" u 12:6:2 with points palette pointsize 1 pointtype 7
+
+#set title 'Predicted Hue0 vs py, colored by px'
+#set output 'samples_h3pyp0.png'
+#splot "samples.dat" u 2:13:1 with points palette pointsize 1 pointtype 7
+
+#set title 'Predicted Hue1 vs py, colored by px'
+#set output 'samples_h3pyp1.png'
+#splot "samples.dat" u 2:14:1 with points palette pointsize 1 pointtype 7
 
 
 set yrange [0.0:0.7]
@@ -80,25 +100,3 @@ splot "samples.dat" u 2:8:1 with points palette pointsize 1 pointtype 7
 set title 'Predicted Value vs horizontal angle, colored by py'
 set output 'samples_v3pxp.png'
 splot "samples.dat" u 12:8:2 with points palette pointsize 1 pointtype 7
-
-#set output 'samples_h0.png'
-#plot "samples.dat" u 1:3 with circles lc rgb "red"
-#set output 'samples_s0.png'
-#plot "samples.dat" u 1:4 with circles lc rgb "red"
-#set output 'samples_v0.png'
-#plot "samples.dat" u 1:5 with circles lc rgb "red"
-
-#set output 'samples_h1hat.png'
-#plot "samples.dat" u 1:6 with circles lc rgb "red"
-#set output 'samples_s1hat.png'
-#plot "samples.dat" u 1:7 with circles lc rgb "red"
-#set output 'samples_v1hat.png'
-#plot "samples.dat" u 1:8 with circles lc rgb "red"
-
-#set output 'samples_h2err.png'
-#plot "samples.dat" u 6:9 with circles lc rgb "red"
-#set output 'samples_s2err.png'
-#plot "samples.dat" u 7:10 with circles lc rgb "red"
-#set output 'samples_v2err.png'
-#plot "samples.dat" u 8:11 with circles lc rgb "red"
-

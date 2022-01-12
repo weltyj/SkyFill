@@ -102,9 +102,9 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 	}
     }
 
-    print_reg_matrix(&m_fit_s_l, "m_fit_h_l") ;
-    print_reg_matrix(&m_fit_s_l, "m_fit_s_l") ;
-    print_reg_matrix(&m_fit_s_r, "m_fit_s_r") ;
+/*      print_reg_matrix(&m_fit_s_l, "m_fit_h_l") ;  */
+/*      print_reg_matrix(&m_fit_s_l, "m_fit_s_l") ;  */
+/*      print_reg_matrix(&m_fit_s_r, "m_fit_s_r") ;  */
 
     float s_correct=1. ;
     float h_correct=1. ;
@@ -144,9 +144,9 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 	h_coefs_left[1] = h_coefs_right[1] ;
     }
 
-    fprintf(stderr, "repair sky hue, h,s correct = %f, %f\n", h_correct, s_correct) ;
-    fprintf(stderr, "repair sky hue, h_coefs(l,r) = (%f, %f) (%f,%f)\n", h_coefs_left[0], h_coefs_left[1], h_coefs_right[0], h_coefs_right[1]) ;
-    fprintf(stderr, "repair sky hue, s_coefs(l,r) = (%f, %f) (%f,%f)\n", s_coefs_left[0], s_coefs_left[1], s_coefs_right[0], s_coefs_right[1]) ;
+/*      fprintf(stderr, "repair sky hue, h,s correct = %f, %f\n", h_correct, s_correct) ;  */
+/*      fprintf(stderr, "repair sky hue, h_coefs(l,r) = (%f, %f) (%f,%f)\n", h_coefs_left[0], h_coefs_left[1], h_coefs_right[0], h_coefs_right[1]) ;  */
+/*      fprintf(stderr, "repair sky hue, s_coefs(l,r) = (%f, %f) (%f,%f)\n", s_coefs_left[0], s_coefs_left[1], s_coefs_right[0], s_coefs_right[1]) ;  */
 
 
 
@@ -180,9 +180,9 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 	    float pixel_s_correct = pleft*s_correct_l + (1.-pleft)*s_correct_r ;
 
 
-	    if(x == pData->min_sky_hue_mask) {
-		fprintf(stderr, "repair sky hue, y=%d, h,s correct = %f, %f\n", y, pixel_h_correct, pixel_s_correct) ;
-	    }
+/*  	    if(x == pData->min_sky_hue_mask) {  */
+/*  		fprintf(stderr, "repair sky hue, y=%d, h,s correct = %f, %f\n", y, pixel_h_correct, pixel_s_correct) ;  */
+/*  	    }  */
 
 	    h *= pixel_h_correct ;
 	    s *= pixel_s_correct ;
@@ -1091,7 +1091,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
     }
 
     // are there sky slopes so steep they will affect the result?
-    if(phase == 9) {
+    if(phase == 9 && pData->repair_sky_slope_correct==1) {
 
         // run back and forth until there is no slope too steep
 	int needs_more=1 ;

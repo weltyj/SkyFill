@@ -141,6 +141,7 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
 
     pData->angle_factor = 1. ;  // in HSV sky model, this is 1. or 2. => changes the angular rate on the horizontal
     pData->valsat_phase_shift = -1000. ; // the value and saturations models will apply a phase shift.  This is an invalid value which will cause it to be automatically detected
+    pData->repair_sky_slope_correct=1 ;
 
     pData->max_end_of_sky = -1 ;
     pData->min_end_of_sky = -1 ;
@@ -556,7 +557,9 @@ void predict_sky_huesat_from_val(float vhat_CIE_sun, float *pH, float *pS, float
 	else
 	    vhat_final = vhat_CIE_sun ;
 
-	vhat_CIE_sun*=pData_fit->maximum_CIE_vhat ;
+	// bring the sun value back to absolute brightness
+	vhat_CIE_sun *= pData_fit->maximum_CIE_vhat ;
+
 	if(pData_fit->sky_lum > 0.) {
 	    // vhat_CIE_sun now runs between max and min, want to scale it to 0.5 to 0.0
 	    float vhat_add = pData_fit->sky_lum*(vhat_CIE_sun - pData_fit->minimum_CIE_vhat)/(pData_fit->maximum_CIE_vhat-pData_fit->minimum_CIE_vhat) ;
@@ -1310,6 +1313,14 @@ int main(int argc, char* argv[])
 	    argv += 3 ;
 	    continue ;
 	}
+
+	if(!strcmp(argv[0], "-nsc")) {
+	    pData->repair_sky_slope_correct=0 ;
+	    argc -= 1 ;
+	    argv += 1 ;
+	    continue ;
+	}
+
 	if(!strcmp(argv[0], "-r_tos_thresh")) {
 	    pData->repair_tos_thresh = atof(argv[1]) ;
 	    argc -= 2 ;
