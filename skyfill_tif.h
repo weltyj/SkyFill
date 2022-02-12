@@ -17,6 +17,11 @@ extern uint16_t IMAGE_NSAMPLES ; // must be 16 bit, needed by call to tif librar
 extern int IMAGE_HAS_ALPHA ;
 extern float p_half_image_width ; // scaled value of half the image width (use as X origin) ;
 
+#define SKY_PIXEL_TYPE 0x01
+#define ABOVE_SKY_PIXEL_TYPE 0x02
+#define NON_SKY_PIXEL_TYPE 0x04
+#define SKY2_PIXEL_TYPE 0x08  // kmeans classifier, next likely sky pixel cluster
+
 // is the sky CIE model also used?
 extern int uses_CIE_model ;
 
@@ -36,11 +41,37 @@ extern struct V3D V_sun;
 	TIF files are read.  data is stored in image[] array.  Top left is (0,0), bottom right is (width-1,height-1) ;
 */
 
-// four macros to get or set rgb and alpha 
+#define tif_b(image,x,y) (((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2])
+
+// macros to get or set rgb and alpha 
 #define tif_get3c(image,x,y,r,g,b) {\
 		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
 		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
 		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define tif_get3cv(image,x,y,array) {\
+		array[0] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		array[1] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		array[2] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define tif_get4cv(image,x,y,array) {\
+		array[0] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		array[1] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		array[2] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		array[3] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		}
+#define dtif_get3c(image,x,y,r,g,b) {\
+		fprintf(stderr, "get image data at %d, %d\n", x, y) ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define dtif_get4c(image,x,y,r,g,b,a) {\
+		fprintf(stderr, "get image data at %d, %d\n", x, y) ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
 		}
 
 #define tif_get4c(image,x,y,r,g,b,a) {\
@@ -88,16 +119,26 @@ extern struct V3D V_sun;
 // normal use -- even weights for all samples
 #define PX_WGT(px) (1.f)
 
-void predict_sky_hsv(float px, float py, float *pH, float *pS, float *pV) ;
-void predict_sky_huesat_from_val(float vhat, float *pH, float *pS, float *pV, float px, float py) ;
-void predict_sky_color(float px, float py, uint16_t *rhat, uint16_t *ghat, uint16_t*bhat) ;
+void predict_sky_hsv(float px, float py, float *hsv_hat) ;
+void predict_sky_huesat_from_val(float vhat, float *hsv_hat, float px, float py) ;
+void predict_sky_modelled_huesat_from_val(float vhat_CIE_sun, float *hsv_hat, float px, float py) ;
+void predict_sky_color(float px, float py, uint16_t *rgb_hat) ;
 float py_adjusted_for_horizon_curvature(float px, float py) ;
 void dump_parameters_to_stdout(void) ;
 struct V3D image_relative_pixel_to_V3(float px, float py) ;
+struct V3D image_relative_pixel_to_V3_no_horizon(float px, float py) ;
 struct V3D image_relative_pixel_to_V3_noclip(float px, float py) ;
 float sun_x_angle2px(float sun_x_angle) ;
+
 float find_maximum_CIE_vhat(void) ;
 void set_FOV_factor() ;
+float F_CIE2003(float px, float py, float *pGamma, float *pTheta, float *pCos_gamma) ;
+float F_CIE2003_sun_only(float px, float py, float *pGamma, float *pTheta, float *pCos_gamma) ;
+
+void predict_sky_h(float px, float py_hc, float *pH) ;
+void predict_sky_s(float px, float py_hc, float *pS) ;
+void predict_sky_v(float px, float py_hc, float *pV) ;
+struct V3D P3toV3(float x, float y, float z) ;
 
 // more than 100 and this is probably not a clear enough sky for this app to work
 #define MAX_TEST_MASKS 100
@@ -115,6 +156,9 @@ typedef struct skyfill_data
     float full_sky_replacement_thresh ; // threhold at which probability of sky pixel causes replacement of pixels
     float full_sky_replacement_ramp ; // speed at which probability of sky pixel changes
     float final_saturation_factor ;
+    float reduce_spline_value_range ; // in splined mode, reduce value range in spine curve. 0 is original curve, 1 is completely flat
+
+
     int horizon_was_set ;
     int sat_prediction_method ; // flag to change saturation prediction method for sky
     int full_hsv_model_level ;
@@ -128,6 +172,7 @@ typedef struct skyfill_data
     int16_t *final_end_of_sky ;
     int16_t *manual_end_of_sky ; // loaded from file "inputfile".eos, if found
     int16_t *raw_start_of_sky ;  // raw start of sky is as detected before any repairs on image
+    uint8_t **pixel_class ; // a 2d array with bit masks that classify the pixels
 
     // set to 1 to grid search for starting sun and horizon position
     int estimate_only ;
@@ -136,25 +181,39 @@ typedef struct skyfill_data
     int show_raw_error ;
     int CIE_sky_index ; // if 3, will only use CIE coefs to predict given CIE index grid search
     int allowed_sky_type ;
+    uint32_t n_estimate_sky_clipped ; // number of pixels at MAX16 during output of estimated pixel values
+    int final_box_filter ; // run a box filter over sky area just before dithering
 
     int fix_sky_hue ;  // try to repair blown out sky areas
     int min_sky_hue_mask ;
     int max_sky_hue_mask ;
+    uint32_t n_sky_hue_fixed_clipped ; // number of pixels at MAX16 during output of repaired sky hue pixel values
     int depth_of_fill_is_absolute ;
     int depth_of_fill_absolute_y ;
     float horizon_curvature ; // a proportion, up or down, at the edge of the image relative to the center of the image
+    float horizon_slope ; // a factor applied to px to adjust py
+
+    int end_of_sky_method ;
 
 
     // defaults for detecting a change from sky pixels to end of sky pixels
     float sky_hue_tolerance ;
     float sky_sat_tolerance ;
     float sky_val_tolerance ;
+
+    // Jan 30 2022, new sky detection logic
+    float sky_min_err_squared[3] ; // R,G,B
+    float sky_ratio_threshold ;  // if individual pixel predicted (err**2/mean_err**2) > sky_ratio_threshold, it is classified as non sky
+
+
     float min_sky_end_p ; // the minimum allowed for end of sky, 0 is bottom of image, 1 is top
     float lowest_sky_py_found ;  // after sky is detected, this is set
     float repair_tos_thresh ;  // how far off a r,g, or b pixel is off from mean before it is not used in local
 				    // sky color calculation -- the get_mean_rgb() function.
 
     int model_is_being_fit ;
+    int val_model_is_linear ; // flag for which model is used to predict value
+    float sample_based_v_correction ; // in the CIE_MODEL_FULL, factor applied to predicted value.
 
     float exposure_factor ; // exposure factor
 
@@ -175,8 +234,10 @@ typedef struct skyfill_data
     /*  float horizon_slope=.05 ;  */
 
     float FOV_horizontal ;
+    float FOV_vertical ;
     float proportion_to_radian_factor_x ; // how many radians per proportion of full image in X dimension ?
     float proportion_to_radian_factor_y ; // how many radians per proportion of full image in Y dimension ?
+    float vertical_asin_angle_factor ; // = sin(FOV_vert_rad/2.)/0.5, for computing vertical angle relative to image coordianates
     float maximum_CIE_vhat ; // maximum vhat in sky dome
     float minimum_CIE_vhat ; // minimum vhat in sky dome
 
@@ -214,6 +275,21 @@ typedef struct skyfill_data
 // one more global
 extern SKYFILL_DATA_t *pData_fit ;
 
+static inline float px_to_AOY(float px) {
+    return -px*pData_fit->proportion_to_radian_factor_x ;
+}
+
+static inline float py_to_AOX(float py) {
+    float l = (py-0.5)*pData_fit->vertical_asin_angle_factor ;
+    if(l > 1.) {
+	l=2.-l ; // py went up to the zenith, and over to other side of sky, mirror the angle
+	return M_PI - asinf(l) ;
+    } else {
+	return asinf(l) ;
+    }
+    //return py*pData_fit->proportion_to_radian_factor_y ;
+}
+
 static inline uint16_t is_in_test_mask(int x, int y)
 {
 
@@ -249,8 +325,13 @@ static inline uint16_t max_test_mask(int x, int y)
     return ymax ;
 }
 
+// model types for sky value
+#define CIE_NO_MODEL 0x00
+#define CIE_SUN_MODEL 0x01
+#define CIE_FULL_MODEL 0x02
 
-#define MAX_OPT_PARMS 17
+
+#define MAX_OPT_PARMS 18
 
 // restrict CIE sky types used in optimization
 #define ALL_CIE_SKIES 0x01

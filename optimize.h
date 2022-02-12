@@ -14,5 +14,5 @@ float optimize_grid(int n_samples, int verbose, int allowed_sky_type, int CIE_sk
 float smart_optimize_function(float *pParams) ;
 void smart_optimize(int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[]) ;
 
-void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_OPT_PARMS+1], int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[]) ;
+void optimize_sky_model(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_OPT_PARMS+1], int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[]) ;
 #endif

@@ -8,6 +8,7 @@
 #include "mstat.h"
 #include "colorspace_conversions.h"
 #include "pixel_tests.h"
+#include "sample_and_fit_sky_model.h"
 
 void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData)
 {
@@ -40,25 +41,26 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 	for(y = start_of_sky[x] ; y <= end_of_sky[x] ; y++) {
 	    if(y > IMAGE_HEIGHT-1) break ;
 
-	    uint16_t r,g,b ;
-	    tif_get3c(image,x,y,r,g,b) ;
+	    uint16_t rgb[3] ;
+	    tif_get3cv(image,x,y,rgb) ;
 
-	    float h,s,v ;
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
+	    float hsv[3] ;
+	    rgb2hsv16(rgb,hsv) ;
 
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
-	    float hhat, shat, vhat ;
-	    predict_sky_huesat_from_val(v, &hhat, &shat, &vhat, px, py) ;
 
-	    if(shat > .1) {
-		sum_s += s ;
-		sum_h += h ;
+	    float hsv_hat[3] ;
+	    predict_sky_modelled_huesat_from_val(hsv[2], hsv_hat, px, py) ;
+
+	    if(hsv_hat[1] > .1) {
+		sum_s += hsv[1] ;
+		sum_h += hsv[0] ;
 		double xv[2] = {1.,y} ;
-		sum_reg(&m_fit_s_l, xv, s/shat, 1.) ;
-		sum_reg(&m_fit_h_l, xv, h/hhat, 1.) ;
-		sum_shat += shat ;
-		sum_hhat += hhat ;
+		sum_reg(&m_fit_s_l, xv, hsv[1]/hsv_hat[1], 1.) ;
+		sum_reg(&m_fit_h_l, xv, hsv[0]/hsv_hat[0], 1.) ;
+		sum_shat += hsv_hat[1] ;
+		sum_hhat += hsv_hat[0] ;
 
 		n_l++ ;
 
@@ -75,25 +77,26 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 	for(y = start_of_sky[x] ; y <= end_of_sky[x] ; y++) {
 	    if(y > IMAGE_HEIGHT-1) break ;
 
-	    uint16_t r,g,b ;
-	    tif_get3c(image,x,y,r,g,b) ;
+	    uint16_t rgb[3] ;
+	    tif_get3cv(image,x,y,rgb) ;
 
-	    float h,s,v ;
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
+	    float hsv[3] ;
+	    rgb2hsv16(rgb,hsv) ;
 
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
-	    float hhat, shat, vhat ;
-	    predict_sky_huesat_from_val(v, &hhat, &shat, &vhat, px, py) ;
 
-	    if(shat > .1) {
-		sum_s += s ;
-		sum_h += h ;
+	    float hsv_hat[3] ;
+	    predict_sky_modelled_huesat_from_val(hsv[2], hsv_hat, px, py) ;
+
+	    if(hsv_hat[1] > .1) {
+		sum_s += hsv[1] ;
+		sum_h += hsv[0] ;
 		double xv[2] = {1.,y} ;
-		sum_reg(&m_fit_s_r, xv, s/shat, 1.) ;
-		sum_reg(&m_fit_h_r, xv, h/hhat, 1.) ;
-		sum_shat += shat ;
-		sum_hhat += hhat ;
+		sum_reg(&m_fit_s_r, xv, hsv[1]/hsv_hat[1], 1.) ;
+		sum_reg(&m_fit_h_r, xv, hsv[0]/hsv_hat[0], 1.) ;
+		sum_shat += hsv_hat[1] ;
+		sum_hhat += hsv_hat[0] ;
 
 		n_r++ ;
 
@@ -107,11 +110,11 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 /*      print_reg_matrix(&m_fit_s_r, "m_fit_s_r") ;  */
 
     float s_correct=1. ;
-    float h_correct=1. ;
+/*      float h_correct=1. ;  */
 
     if(n > 0) {
 	s_correct = sum_s/sum_shat ;
-	h_correct = sum_h/sum_hhat ;
+/*  	h_correct = sum_h/sum_hhat ;  */
     }
 
     if(n_l > 2) {
@@ -150,8 +153,10 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 
 
 
+    pData->n_sky_hue_fixed_clipped = 0 ;
+
     for(x=pData->min_sky_hue_mask ; x < pData->max_sky_hue_mask ; x ++) {
-	uint16_t r,g,b ;
+	uint16_t rgb[3] ;
 	if(pData->column_mask[x] == 1) continue ;
 
 	float pleft = 1.-(float)(x-pData->min_sky_hue_mask)/(float)(pData->max_sky_hue_mask-pData->min_sky_hue_mask) ;
@@ -159,15 +164,16 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 
 	for(y = start_of_sky[x] ; y <= end_of_sky[x] ; y++) {
 	    if(y >= IMAGE_HEIGHT) break ;
-	    tif_get3c(image,x,y,r,g,b) ;
+	    tif_get3cv(image,x,y,rgb) ;
+	    uint16_t r0 = rgb[0], g0=rgb[1], b0=rgb[2] ;
 
-	    float h,s,v ;
-	    rgb2hsv16(r,g,b,&h,&s,&v) ;
+	    float hsv[3] ;
+	    rgb2hsv16(rgb,hsv) ;
 
 	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
-	    predict_sky_huesat_from_val(v, &h, &s, &v, px, py) ;
+	    predict_sky_modelled_huesat_from_val(hsv[2], hsv, px, py) ;
 
 	    //compute correction factors on left and right side
 	    float h_correct_l = h_coefs_left[0] + h_coefs_left[1]*(float)y ;
@@ -184,11 +190,56 @@ void repair_sky_hue(tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SK
 /*  		fprintf(stderr, "repair sky hue, y=%d, h,s correct = %f, %f\n", y, pixel_h_correct, pixel_s_correct) ;  */
 /*  	    }  */
 
-	    h *= pixel_h_correct ;
-	    s *= pixel_s_correct ;
+	    hsv[0] *= pixel_h_correct ;
+	    hsv[1] *= pixel_s_correct ;
 
-	    hsv2rgb16(h,s,v,&r,&g,&b) ;
-	    tif_set3c(image,x,y,r,g,b) ;
+	    hsv2rgb16(hsv,rgb) ;
+	    int dr = (int)rgb[0]-(int)r0 ;
+	    int dg = (int)rgb[1]-(int)g0 ;
+	    int db = (int)rgb[2]-(int)b0 ;
+	    float v_adjust=1. ;
+	    // find the component that dropped the most
+	    // and bring it back to the original value, bring other components up by the same factor
+	    // reasoning is the sky was blown out, and a component with a nonclipped value > 1.0, was
+	    // clipped to 1.0, changing the sky hue.  Using this logic will allow that component to
+	    // be restored to its original value
+	    // note -- if the image values are already too high, lowering the exposure with the -ef flag
+	    // may be needed so value are not clipped to 1.0 again...
+	    if(dr < dg) {
+		if(dr < db)
+		    v_adjust = (float)r0/(float)rgb[0] ;
+		else
+		    v_adjust = (float)b0/(float)rgb[2] ;
+	    } else {
+		if(dg < db)
+		    v_adjust = (float)g0/(float)rgb[1] ;
+		else
+		    v_adjust = (float)b0/(float)rgb[2] ;
+	    }
+
+/*  	    v_adjust =( (float)r0/(float)r+ (float)g0/(float)g+ (float)b0/(float)b) / 3.0 ;  */
+
+	    int32_t r32 = (uint32_t)((float)rgb[0] * v_adjust + 0.5) ;
+	    int32_t g32 = (uint32_t)((float)rgb[1] * v_adjust + 0.5) ;
+	    int32_t b32 = (uint32_t)((float)rgb[2] * v_adjust + 0.5) ;
+	    int clipped=0 ;
+
+	    if(r32 > MAX16) {
+		r32=MAX16 ;
+		clipped=1 ;
+	    }
+	    if(g32 > MAX16) {
+		g32=MAX16 ;
+		clipped=1 ;
+	    }
+	    if(g32 > MAX16) {
+		g32=MAX16 ;
+		clipped=1 ;
+	    }
+
+	    pData->n_sky_hue_fixed_clipped += clipped ;
+
+	    tif_set3c(image,x,y,r32,g32,b32) ;
 
 	}
     }
@@ -205,14 +256,22 @@ void repair_alpha(tdata_t *image, SKYFILL_DATA_t *pData)
     int x,y ;
 
     for(x = 0 ; x < IMAGE_WIDTH ; x++) {
-	for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
-	    uint16_t r,g,b ;
-	    tif_get3c(image,x,y,r,g,b) ;
+	for(y = 0 ; y < IMAGE_HEIGHT ; y++)
+/*  	for(y = IMAGE_HEIGHT-1 ; y > -1 ; y--)  */
+	{
+	    uint16_t r,g,b,a ;
+	    tif_get4c(image,x,y,r,g,b,a) ;
+	    if(a < MAX16) {
+		tif_set4c(image,x,y,0,0,0,0) ;
+		continue ;
+	    }
 
 	    // nearest neighbor search +/- 2 pixels to find max r,g,b in area
 	    uint16_t max_r=0 ;
 	    uint16_t max_g=0 ;
 	    uint16_t max_b=0 ;
+	    float sum_r=0., sum_g=0., sum_b=0. ;
+	    float n_neighbor ;
 	    int x0 = x-2 ; if(x0 < 0) x0 = 0 ;
 	    int y0 = y-2 ; if(y0 < 0) y0 = 0 ;
 	    int x1 = x+2 ; if(x1 > IMAGE_WIDTH-1) x1 = IMAGE_WIDTH-1 ;
@@ -228,6 +287,10 @@ void repair_alpha(tdata_t *image, SKYFILL_DATA_t *pData)
 			if(max_r < r_neighbor) max_r = r_neighbor ;
 			if(max_g < g_neighbor) max_g = g_neighbor ;
 			if(max_b < b_neighbor) max_b = b_neighbor ;
+			sum_r += r_neighbor ;
+			sum_g += g_neighbor ;
+			sum_b += b_neighbor ;
+			n_neighbor += 1. ;
 		    } else {
 			found_edge=1 ;
 		    }
@@ -237,6 +300,7 @@ void repair_alpha(tdata_t *image, SKYFILL_DATA_t *pData)
 	    if(found_edge && (r < max_r/8 || g < max_g/8 || b < max_b/8)) {
 		// this is a suspect pixel on the edge, with at least one very low color component
 		tif_set4c(image,x,y,0,0,0,0) ;
+/*  		tif_set4c(image,x,y,sum_r/n_neighbor,sum_r/n_neighbor,sum_r/n_neighbor,MAX16) ;  */
 	    }
 	}
     }
@@ -391,8 +455,8 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
     for(int i=0 ; i < n_possible_points ; i++) {
 	x = x_possible_coords[i] ;
 	y = y_possible_coords[i] ;
-	float dx = fabs(x-xc) ;
-	float dy = fabs(y-yc) ;
+	float dx = fabsf(x-xc) ;
+	float dy = fabsf(y-yc) ;
 	float wgt = 1./(dx+dy+1) ;
 	sum[0] += wgt*(float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+0] ; // R
 	sum[1] += wgt*(float)((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+1] ; // G
@@ -426,9 +490,9 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 
 	point_status[i] = 0 ; // this point might need repair
 
-	float r_err = fabs( (r-mean[0])/mean[0]) ;
-	float g_err = fabs( (g-mean[1])/mean[1]) ;
-	float b_err = fabs( (b-mean[2])/mean[2]) ;
+	float r_err = fabsf( (r-mean[0])/mean[0]) ;
+	float g_err = fabsf( (g-mean[1])/mean[1]) ;
+	float b_err = fabsf( (b-mean[2])/mean[2]) ;
 #ifdef GMR_DEBUG
 	fprintf(stderr, "GMR:      err x,y:%d,%d %f %f %f\n", x,y,r_err,g_err,b_err) ;
 #endif
@@ -840,7 +904,8 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 	}
     }
 
-    if(phase == 6) {
+    if(0 && phase == 6) {
+	// divot repair has issues, can create bad colors when interpolating/extraapolating long distances
 
 	set_minmax_sky_values(pData) ;
 
@@ -957,7 +1022,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
     }
 
     if(phase == 7) {
-	fprintf(stderr, "RTOS phase 3: fill side edges\n") ;
+	fprintf(stderr, "RTOS phase 7: fill side edges\n") ;
 	// do the side edges need to be fixed?
 	int edge_width = IMAGE_WIDTH/40 ;
 	int min_start_y=IMAGE_HEIGHT ;
@@ -1170,6 +1235,155 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 	}
     }
 
-    fprintf(stderr, "Finished RTOS::: sky hsv (%3.0f,%4.2f,%4.2f)\n", pData->hue_sky, pData->sat_sky, pData->val_sky) ;
+    if(phase == 11) {
+	fprintf(stderr, "RTOS fill holes under opaque sections\n") ;
+
+	int *opaque_x = (int *)calloc(IMAGE_HEIGHT, sizeof(int)) ;
+
+	for(x = 0 ; x < IMAGE_WIDTH-1 ; x++) {
+	    if(pData->column_mask[x] == 1) continue ;
+
+	    // looking for start of sky changes > 1
+	    int mid_x = -1, mid_y, y0, y1 ;
+
+	    if(pData->start_of_sky[x+1] - pData->start_of_sky[x] > 1) {
+		y0 = pData->start_of_sky[x] ;
+		y1 = pData->start_of_sky[x+1] ;
+		fprintf(stderr, "check alpha gap at x:%d, y %d to %d\n", x, y0, y1) ;
+		mid_x = IMAGE_WIDTH ;
+		mid_y = 0 ;
+
+		for(int y=y0+1 ; y < y1 ; y++) {
+		    int xs ;
+		    for(xs=x ; xs > 0 ; xs--) {
+			if(xy_has_nonblack_pixel(image, xs, y)) {
+			    opaque_x[y] = xs ;
+			    if(xs < mid_x) {
+				mid_x = xs ;
+				mid_y = y ;
+			    }
+			    break  ;
+			}
+		    }
+
+		    if(xs < 0) {
+			// hit the edge of the image, this is not a fixable problem
+			mid_x=-1 ;
+			break ;
+		    }
+		}
+
+		if(mid_x == x) {
+		    // no transparent pixels found beneath neigboring start of sky, nothing to be done
+		    mid_x=-1 ;
+		}
+	    } else if(pData->start_of_sky[x] - pData->start_of_sky[x+1] > 1) {
+		y0 = pData->start_of_sky[x+1] ;
+		y1 = pData->start_of_sky[x] ;
+		fprintf(stderr, "check alpha gap at x:%d, y %d to %d\n", x, y0, y1) ;
+		mid_x = -1 ;
+		mid_y = 0 ;
+
+		for(int y=y0+1 ; y < y1 ; y++) {
+		    int xs ;
+		    for(xs=x+1 ; xs < IMAGE_WIDTH ; xs++) {
+			if(xy_has_nonblack_pixel(image, xs, y)) {
+			    opaque_x[y] = xs ;
+			    if(xs > mid_x) {
+				mid_x = xs ;
+				mid_y = y ;
+			    }
+			    break  ;
+			}
+		    }
+
+		    if(xs >= IMAGE_WIDTH) {
+			// hit the edge of the image, this is not a fixable problem
+			mid_x=-1 ;
+			break ;
+		    }
+		}
+
+		if(mid_x == x+1) {
+		    // no transparent pixels found beneath neigboring start of sky, nothing to be done
+		    mid_x=-1 ;
+		}
+	    } else {
+		continue ;
+	    }
+
+	    if(mid_x > -1) 
+		fprintf(stderr, "mid_x:%d, mid_y %d\n", mid_x, mid_y) ;
+
+	    if(mid_x >= 0 && mid_x < IMAGE_WIDTH) {
+		int x0, x1 ;
+		int pts[3][2] ;
+		// get three sets of coefs for prediction, at (min_x, min_y), (x,y0) and (x+1,y1)
+		pts[0][0] = mid_x ;
+		pts[0][1] = mid_y ;
+		if(mid_x < x+1) {
+		    x0=mid_x+1 ;
+		    x1=x+1 ;
+		    pts[1][0] = x ;
+		    pts[1][1] = y0 ;
+		    pts[2][0] = x+1 ;
+		    pts[2][1] = y1 ;
+		} else {
+		    x0=x+1 ;
+		    x1=mid_x ;
+		    pts[1][0] = x ;
+		    pts[1][1] = y1 ;
+		    pts[2][0] = x+1 ;
+		    pts[2][1] = y0 ;
+		}
+
+		double rcoef[3][4], gcoef[3][4], bcoef[3][4] ;
+
+		for(int i=0 ; i < 3 ; i++) {
+		    int search_width = 30 ; // need a robust estimate, so wide search width
+/*  int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], double bcoef[],int search_width, int clip_eos_flag, int repair_bad_points_flag, int recursion_level, SKYFILL_DATA_t *pData)  */
+		    get_mean_rgb(image,pts[i][0],pts[i][1],rcoef[i],gcoef[i],bcoef[i],search_width,0,1,2, pData) ;
+		}
+
+#define V1 0
+#define V2 1
+#define V3 2
+		// get denominator for barycentric weighting
+		float denom = (pts[V2][1]-pts[V3][1])*(pts[V1][0]-pts[V3][0]) + (pts[V3][0]-pts[V2][0])*(pts[V1][1]-pts[V3][1]) ;
+
+		// now fill in the missing values
+		for(int xs=x0 ; xs < x1 ; xs++) {
+		    for(y=y0+1 ; y < y1 ; y++) {
+			if(xy_has_nonblack_pixel(image, xs, y) == 0) {
+			    float rgb_hat[3][3] ;
+			    for(int i=0 ; i < 3 ; i++) {
+				rgb_hat[i][0] = rcoef[i][0] + rcoef[i][1]*(float)xs + rcoef[i][2]*(float)y + rcoef[i][3]*(float)y*(float)y ;
+				rgb_hat[i][1] = gcoef[i][0] + gcoef[i][1]*(float)xs + gcoef[i][2]*(float)y + gcoef[i][3]*(float)y*(float)y ;
+				rgb_hat[i][2] = bcoef[i][0] + bcoef[i][1]*(float)xs + bcoef[i][2]*(float)y + bcoef[i][3]*(float)y*(float)y ;
+			    }
+			    float num1 = (pts[V2][1]-pts[V3][1])*(xs-pts[V3][0]) + (pts[V3][0]-pts[V2][0])*(y-pts[V3][1]) ;
+			    float w1 = num1/denom ;
+			    float num2 = (pts[V3][1]-pts[V1][1])*(xs-pts[V3][0]) + (pts[V1][0]-pts[V3][0])*(y-pts[V3][1]) ;
+			    float w2 = num2/denom ;
+			    float w3 = 1. - w1 - w2 ;
+
+			    float rhat = w1*rgb_hat[0][0] + w2*rgb_hat[1][0] + w3*rgb_hat[2][0] ;
+			    float ghat = w1*rgb_hat[0][1] + w2*rgb_hat[1][1] + w3*rgb_hat[2][1] ;
+			    float bhat = w1*rgb_hat[0][2] + w2*rgb_hat[1][2] + w3*rgb_hat[2][2] ;
+
+			    tif_set4c(image,xs,y, (uint16_t)(rhat+0.5), (uint16_t)(ghat+0.5), (uint16_t)(bhat+0.5), MAX16 );
+			}
+		    }
+		}
+
+	    }
+
+
+	}
+
+	free(opaque_x) ;
+    }
+
+/*      fprintf(stderr, "Finished RTOS::: sky hsv (%3.0f,%4.2f,%4.2f)\n", pData->hue_sky, pData->sat_sky, pData->val_sky) ;  */
 
 }

@@ -66,7 +66,8 @@ float samples_error(void)
     set_FOV_factor() ;
 
 
-    V_sun= image_relative_pixel_to_V3_noclip(sun_x_angle2px(pData_fit->sun_x), pData_fit->sun_py) ;
+/*      V_sun= image_relative_pixel_to_V3_noclip(sun_x_angle2px(pData_fit->sun_x), pData_fit->sun_py) ;  */
+    V_sun= image_relative_pixel_to_V3(sun_x_angle2px(pData_fit->sun_x), pData_fit->sun_py) ;
 
     pData_fit->maximum_CIE_vhat = find_maximum_CIE_vhat() ;
 
@@ -83,9 +84,9 @@ float samples_error(void)
 /*      sample_based_v_correction = 1.f ;  */
 
     for(i = 0 ; i < n_samples_to_optimize ; i++) {
-	float h,s,v ;
-	predict_sky_hsv(samples[i].px, samples[i].py, &h, &s, &v) ;
-	samples[i].v_hat = v ;
+	float hsv[3] ;
+	predict_sky_hsv(samples[i].px, samples[i].py, hsv) ;
+	samples[i].v_hat = hsv[2] ;
 	sum_v += samples[i].v ;
 	sum_v_hat += samples[i].v_hat ;
     }
@@ -117,11 +118,11 @@ float samples_error(void)
 	if(!(calln % 1000)) fprintf(stderr, "mean vhat=%f\n", sum_vhat/(float)n_samples_to_optimize) ;
     } else {
 	for(i = 0 ; i < n_samples_to_optimize ; i++) {
-	    uint16_t rhat,ghat,bhat ;
-	    predict_sky_color(samples[i].px, samples[i].py, &rhat, &ghat, &bhat) ;
-	    float err_r = (samples[i].r - rhat) ;
-	    float err_g = (samples[i].g - ghat) ;
-	    float err_b = (samples[i].b - bhat) ;
+	    uint16_t rgb_hat[3] ;
+	    predict_sky_color(samples[i].px, samples[i].py, rgb_hat) ;
+	    float err_r = (samples[i].r - rgb_hat[0]) ;
+	    float err_g = (samples[i].g - rgb_hat[1]) ;
+	    float err_b = (samples[i].b - rgb_hat[2]) ;
 	    sum_err_sq += (err_r*err_r + err_g*err_g + err_b*err_b)*PX_WGT(samples[i].px) ; // a test for local weighting
 	    //sum_err_sq += (err_r*err_r + err_g*err_g + err_b*err_b) ;
 	}
@@ -352,15 +353,15 @@ void grid_search_sun_xy(SKYFILL_DATA_t *pData, struct OPT_PARM opt_parms[], int 
     optimize_grid(n_samples,1,pData->allowed_sky_type, pData->CIE_sky_index,opt_parms) ;
 }
 
-void fit_sky_modelv2(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_OPT_PARMS+1], int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[])
+void optimize_sky_model(int force_grid_optimization, int n_custom_optimizations, int optimization_var[10][MAX_OPT_PARMS+1], int n_samples, SKYFILL_DATA_t *pData,struct OPT_PARM opt_parms[])
 {
     pData->model_is_being_fit=1 ;
 
     // set the global pointer
     pData_fit = pData ;
 
-    if(force_grid_optimization || n_custom_optimizations == 0) {
-	if(uses_CIE_model)
+    if(force_grid_optimization) {
+	if(uses_CIE_model != CIE_NO_MODEL)
 	    grid_search_sun_xy(pData, opt_parms, n_samples) ;
 
 

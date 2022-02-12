@@ -36,17 +36,17 @@ int xy_has_nonblack_pixel(tdata_t *image, int32_t x, int32_t y)
 
 int wrong_hue_or_black(tdata_t *image, int32_t x, int32_t y, float hue_sky, float sat_sky, float val_sky)
 {
-    uint16_t r,g,b,a ;
-    tif_get4c(image,x,y,r,g,b,a) ;
+    uint16_t rgba[4] ;
+    tif_get4cv(image,x,y,rgba) ;
 
     /* if alpha channel is nonzero then hugin has placed image data here */
-    if(a < HALF16) return 0 ;
+    if(rgba[3] < HALF16) return 0 ;
 
-    float h,s,v ;
-    rgb2hsv16(r,g,b,&h,&s,&v) ;
-    float e_h = fabs((h-hue_sky)/hue_sky) ;
-    float e_s = fabs((s-sat_sky)/sat_sky) ;
-    float e_v = fabs((v-val_sky)/val_sky) ;
+    float hsv[3] ;
+    rgb2hsv16(rgba,hsv) ;
+    float e_h = fabsf((hsv[0]-hue_sky)/hue_sky) ;
+    float e_s = fabsf((hsv[1]-sat_sky)/sat_sky) ;
+    float e_v = fabsf((hsv[2]-val_sky)/val_sky) ;
 
     if(e_h > .05) return 1 ;
     if(e_s > .20) return 1 ;

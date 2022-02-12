@@ -2,14 +2,15 @@
 #define SAMPLE_AND_FIT_SKY_MODEL_H
 struct sample_point {
     float px, py ;
+    float normalized_v ;
+    float normalized_s ;
     float h,s,v ;
     float v_hat ;
     float abs_error[2] ; // absolute error from model of r+g+b, by location index
     float abs_h_error[2] ; // absolute error from model of hue, by location index
     float abs_s_error[2] ; // absolute error from model of sat, by location index
     float abs_v_error[2] ; // absolute error from model of val, by location index
-    float sum_dist2_sv ;
-    float sum_dist2_vy ;
+    float cv_r, cv_g, cv_b ; // coefficiant of variation (proportion not, %) for each color component
     uint16_t n_close_neighbors ;
     uint16_t r,g,b,x,y ;
     uint8_t is_outlier ;
@@ -24,15 +25,46 @@ struct sample_point {
 extern struct sample_point *samples ;
 extern int n_samples_to_optimize ;
 
+// the value model is a single model, not 2 (or more) fit with different weights based on px
+#define VAL_MODEL_IS_SINGLE
+
 #define FULL_RAW_HSV_MODEL
 
 // coefs to model sky HSV from input file sky area
 // model is H|S|V = B0 + B1*px + B2*py + B3*px*py ;
+#define MAX_COEFS 10
 struct HSV_model_coefs {
-    float h_coefs[10];
-    float s_coefs[10];
-    float v_coefs[10];
+    float h_coefs[MAX_COEFS];
+    float s_coefs[MAX_COEFS];
+    float v_coefs[MAX_COEFS];
     } ;
+
+// two arrays will hold the underlying curve vs horizontal angle shape
+#define N_BASE_KNOTS 101
+extern float *val_base_knots ;
+extern float *sat_base_knots ;
+
+// for getting an interpolated point given px
+#define N_BASE_KNOTSM1 100
+#define KNOT_PWIDTH (1./(float)N_BASE_KNOTSM1)
+#define PX2KNOT(px) ( (int)((px+0.5)/KNOT_PWIDTH) )
+
+#define PX2_base_v(px,base_v) {\
+    int k0 = PX2KNOT(px) ;\
+    int k1 = k0+1 ;\
+    float px_k0=(float)k0*KNOT_PWIDTH-.5;\
+    float prop_k1 = (px-px_k0)/KNOT_PWIDTH ;\
+    base_v = (1.-prop_k1)*val_base_knots[k0] + prop_k1*val_base_knots[k1] ;\
+    }
+
+#define PX2_base_s(px,base_s) {\
+    int k0 = PX2KNOT(px) ;\
+    int k1 = k0+1 ;\
+    float px_k0=(float)k0*KNOT_PWIDTH-.5;\
+    float prop_k1 = (px-px_k0)/KNOT_PWIDTH ;\
+    base_s = (1.-prop_k1)*sat_base_knots[k0] + prop_k1*sat_base_knots[k1] ;\
+    }
+
 
 extern struct HSV_model_coefs raw_hsv_coefs[2] ;
 
@@ -106,59 +138,75 @@ static inline float local_h_from_pxpy(float px, float py_hc, float *coefs)
 
 }
 
-#define TEST_SAT2
-#ifdef TEST_SAT2
 static inline float local_s_from_pxpy(float px, float py_hc, float *coefs)
 {
+#ifdef QUADRATIC_SAT_VERSION
     float x = py_hc-(coefs[0]+coefs[3]*px+coefs[4]*px*px) ;
     if(x < 0.0) x = 0.0 ;
-    return x/(coefs[1]+coefs[2]*x) ;
-}
+    return coefs[5] + x/(coefs[1]+coefs[2]*x) ;
 #else
-static inline float local_s_from_pxpy(float px, float py_hc, float *coefs)
-{
-    float x_mapped = fabs(pData_fit->FOV_horizontal*px+pData_fit->valsat_phase_shift-coefs[5])*coefs[6] ;
-
-    return -cos(   pow((x_mapped)/180.,coefs[0])*M_PI  ) * coefs[1] + (coefs[2] + coefs[3]*py_hc + coefs[4]*log(py_hc)) ;
-}
+    float x = py_hc-(coefs[0]+coefs[3]*px) ;
+    if(x < 0.0) x = 0.0 ;
+    return coefs[4] + x/(coefs[1]+coefs[2]*x) ;
 #endif
+}
 
-#define LINEAR_VAL_MODEL
-#ifdef LINEAR_VAL_MODEL
+static inline float modelled_local_v_from_pxpy(float px, float py_hc, float *coefs)
+{
+    float v_hat ;
+
+    if(pData_fit->val_model_is_linear) {
+	float mapped_x = pData_fit->FOV_horizontal*px*M_PI/180.*pData_fit->angle_factor ;
+	return coefs[0] + coefs[1]*cos(mapped_x) + coefs[2]*sin(mapped_x)
+		+ coefs[3]*py_hc + coefs[4]*py_hc*py_hc ;
+
+    } else {
+	float x_shifted = (pData_fit->FOV_horizontal*px+coefs[6]) ;
+	float mapped_x = (x_shifted)*M_PI/180. ;
+	float amplitude_by_x = (1.-coefs[4]*fabs(x_shifted)/180.) ;
+
+	v_hat = coefs[0] + coefs[1]/(1.+exp((py_hc-coefs[2])*coefs[3])) // this is just a logistic
+		+ coefs[5]*cos(mapped_x)*amplitude_by_x // this will move the logistic result up and down along the x-axis
+		;
+    }
+
+    if(v_hat > 1.) v_hat=1. ;
+    return v_hat ;
+}
+
 static inline float local_v_from_pxpy(float px, float py_hc, float *coefs)
 {
-    float mapped_x = pData_fit->FOV_horizontal*px*M_PI/180.*pData_fit->angle_factor ;
+    float v_hat ;
 
-    return coefs[0] + coefs[1]*cos(mapped_x) + coefs[2]*sin(mapped_x)
-	    + coefs[3]*py_hc + coefs[4]*py_hc*py_hc ;
-}
-#endif
+    float base_v ;
+    PX2_base_v(px,base_v) ;
 
-#ifdef NONLINEAR_VAL_MODEL
-#define TEST_VAL_MODEL
-#ifdef TEST_VAL_MODEL
-static inline float local_v_from_pxpy(float px, float py_hc, float *coefs)
-{
-    float x_mapped = (pData_fit->FOV_horizontal*px*(coefs[1]+coefs[4]*py_hc)+90+pData_fit->valsat_phase_shift)*M_PI/180. ;
-    float Z = 1./(1. + pow(abs(cos(x_mapped)),(coefs[2]+coefs[5]*py_hc))  ) ;
-    return coefs[0]*(Z-.5) + (coefs[3]+coefs[6]*py_hc) ;
-}
-#else
-static inline float local_v_from_pxpy(float px, float py_hc, float *coefs)
-{
-#define VAL_INV_ADD 1.5
-    float angle_factor = coefs[0]+coefs[1]*py_hc ;
-    float x_mapped = ((pData_fit->FOV_horizontal*px+pData_fit->valsat_phase_shift)*angle_factor-180.)
-                      * M_PI/180. ;
-    float err_correct = coefs[6] + coefs[7]*py_hc + coefs[8]*py_hc*py_hc ;
-    return coefs[2]/(cos(x_mapped)*coefs[3]+VAL_INV_ADD)
-	    +coefs[4]
-	    +coefs[5]*py_hc
-	    + err_correct
-	    ;
-}
+    if(0 && pData_fit->val_model_is_linear) {
+/*  	float mapped_x = pData_fit->FOV_horizontal*px*M_PI/180.*pData_fit->angle_factor ;  */
+/*  	return coefs[0] + coefs[1]*cos(mapped_x) + coefs[2]*sin(mapped_x)  */
+/*  		+ coefs[3]*py_hc + coefs[4]*py_hc*py_hc ;  */
+
+	return coefs[0] + coefs[1]*base_v + coefs[2]*py_hc ;
+
+    } else {
+/*  	float x_shifted = (pData_fit->FOV_horizontal*px+coefs[6]) ;  */
+/*  	float mapped_x = (x_shifted)*M_PI/180. ;  */
+/*  	float amplitude_by_x = (1.-coefs[4]*fabs(x_shifted)/180.) ;  */
+	float vert_angle = (py_hc-pData_fit->horizon_py-coefs[3]*base_v) * pData_fit->proportion_to_radian_factor_y ;
+	float cosa = cos(coefs[2]*vert_angle) ;
+	v_hat = base_v*coefs[1] + coefs[0]*(exp(cosa)/exp(1.)-exp(-2.))*1.156517642 ;
+
+#ifdef OLD
+	v_hat = coefs[0] + coefs[1]/(1.+exp((py_hc-coefs[2])*coefs[3])) // this is just a logistic
+		+ base_v // this will move the logistic result up and down along the x-axis
+/*  		+ coefs[5]*cos(mapped_x)*amplitude_by_x // this will move the logistic result up and down along the x-axis  */
+		;
 #endif
-#endif
+    }
+
+/*      if(v_hat > 1.) v_hat=1. ;  */
+    return v_hat ;
+}
 
 #define hsv_blended(f,px,py,v) {\
     float left_wgt = px_wgt_left(px,1.) ;\
@@ -225,21 +273,36 @@ static inline float s_from_pxpy(float px, float py_hc, int full_hsv_model_level,
     return s ;
 }
 
+static inline float modelled_v_from_pxpy(float px, float py_hc, int full_hsv_model_level)
+{
+    if(full_hsv_model_level==1)
+	return modelled_local_v_from_pxpy(px,py_hc,raw_hsv_coefs[0].v_coefs) ;
+
+    float v ;
+    v_blended(modelled_local_v_from_pxpy, px, py_hc, v) ;
+    return v ;
+}
+
 static inline float v_from_pxpy(float px, float py_hc, int full_hsv_model_level)
 {
+#ifdef VAL_MODEL_IS_SINGLE
+	return local_v_from_pxpy(px,py_hc,raw_hsv_coefs[0].v_coefs) ;
+#else
     if(full_hsv_model_level==1)
 	return local_v_from_pxpy(px,py_hc,raw_hsv_coefs[0].v_coefs) ;
 
     float v ;
     v_blended(local_v_from_pxpy, px, py_hc, v) ;
     return v ;
+#endif
 }
 
 float fit_full_HSV_model(int n_samples, int location_index, int calc_error, SKYFILL_DATA_t *pData) ;
 
 void reset_sample_errors(int n_samples) ;
 
-int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData) ;
+int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky, SKYFILL_DATA_t *pData, int need_model_fit) ;
 int read_samples_and_fit_model(char *samplefile, SKYFILL_DATA_t *pData) ;
+void output_sample_data(int n_samples, char filename[]) ;
 
 #endif
