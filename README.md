@@ -60,18 +60,18 @@ the sky
 **Masks**
 * Masks are potentially an important option for handling images that are not simple situations with unobstructed clear sky at
   the top of the image
-*Column Mask
+* Column Mask
   "-m \<l\> \<r\>"  -- this flag prevents any analysis, or changes to image columns from *l* to *r*
- *Sample Mask
+* Sample Mask
   "-sm \<l\> \<r\>"  -- this flag prevents using image columns from *l* to *r* as estimates of clear sky for purposes of modelling the 
   sky HSV values
- *Repair Mask
+* Repair Mask
   "-rm \<l\> \<r\>"  -- this flag prevents image columns from *l* to *r* from having changes make to pixels in the sky, though
   the area may still be used for sampling actual sky values
- *Non Sky Repair Mask
+* Non Sky Repair Mask
   "-nsrm \<l\> \<r\>"  -- this flag prevents image columns from *l* to *r* from having changes make to pixels in the sky
   which are classsified as likely to be not a sky pixel (i.e. a cloud, or a piece of vegetation)
- *Test Mask
+* Test Mask
   "-tm \<left\> \<right\> \<top\> \<bottom\>"  -- this flag identifies a rectangle that is skipped over for end of sky detection,
   and no sky samples are taken in the rectangle.  In the examples, this has been used to exclude regions with direct sun and
   lens flare that are in the actual sky area, but would be bad to use for detecting end of sky and for modelling the sky color
@@ -99,27 +99,27 @@ the sky
 * In this mode, you can supply parameters for putting a modelled sun in the sky.  The actual sun diameter is much smaller in an
   image than you might first guess, because so much of the area around the sun has been blown out and exceeded the sensor maximum
   value.   The parameters for defining the sun are:
-  *-sx \<Xangle\> -- in degrees -- Xangle of 0 is the middle of the image, Xangle=-FOV/2 is left side of image, Xangle=FOV/2 is right side of image
-  *-sy \<Py\> -- as a proportion, 1 is top of image, 0 is bottom of image
-  *--- note, you can put the sun outside of the image, and get just some glow from the modelled sun to appear in the image
-  *-C \<Cvalue\> -- overall brighness of the sun.  Default is 2
-  *-D \<Dvalue\> -- overall diameter of the sun.  Default is .01  You *must* set this to a large value, try the range 1 to 10.  The "size" of the
+  * -sx \<Xangle\> -- in degrees -- Xangle of 0 is the middle of the image, Xangle=-FOV/2 is left side of image, Xangle=FOV/2 is right side of image
+  * -sy \<Py\> -- as a proportion, 1 is top of image, 0 is bottom of image
+  * --- note, you can put the sun outside of the image, and get just some glow from the modelled sun to appear in the image
+  * -C \<Cvalue\> -- overall brighness of the sun.  Default is 2
+  * -D \<Dvalue\> -- overall diameter of the sun.  Default is .01  You *must* set this to a large value, try the range 1 to 10.  The "size" of the
                    generated sun will be somewhat linear with respect to the Dvalue chosen
-  *-F \<Fvalue\> -- Blending amount of the modelled sun into the normal modelled sky, default is 0.5
-  *-G \<Gvalue\> -- This controls how much of the sun+modelled sky to use in replacing pixel values.  Think of this as a "blending factor" that overrides
+  * -F \<Fvalue\> -- Blending amount of the modelled sun into the normal modelled sky, default is 0.5
+  * -G \<Gvalue\> -- This controls how much of the sun+modelled sky to use in replacing pixel values.  Think of this as a "blending factor" that overrides
                    the normal top of sky to end of sky blending factor.  Gvalue is given as a proportional distance (where the proportions are 0 to 1 for
 		   both image width and image height)  Default is 0, so you *must* set this to a nonzero value to have an effect.  Try small values, .1 is
 		   a good first try
 
 
 **other flags yet to be documented**
-    *-nceos
-    *-fsrt <thresh> <ramp>
-    *-fsh \<l\> \<r\>
-    *-msu <0|1|2>
-    *-r_tos_thresh <thresh>
-    *-sd <S>
-    *-fs <S>
+    * -nceos
+    * -fsrt <thresh> <ramp>
+    * -fsh \<l\> \<r\>
+    * -msu <0|1|2>
+    * -r_tos_thresh <thresh>
+    * -sd <S>
+    * -fs <S>
 
  
  
