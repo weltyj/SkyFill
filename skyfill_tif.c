@@ -181,10 +181,11 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->perez_A=-1.5 ; // horizon-zenith gradient, -5 to 5
     pData->perez_B=-0.80 ; // gradient intensity, -10 to 0
     pData->perez_C=2. ; // circumsolar intensity, 0 to 25
-    pData->perez_D=-2.4 ; // circumsolar radius, -10 to 0
+    pData->perez_D=.01 ; // circumsolar radius, -10 to 0
     pData->perez_E=-0.15 ; // backscattering effect, -1 to 5
     pData->perez_F=0.5 ; // blending amount of sun model into sky hsv model -- Jeff Welty
-    pData->perez_G=10. ; // falloff factor of blending amount -- Jeff Welty
+    pData->perez_G=0. ; // falloff factor of blending amount -- Jeff Welty
+    pData->output_sample_data = 0 ;
 }
 
 
@@ -255,22 +256,59 @@ float sun_x_angle2px(float sun_x_angle)
 }
 
 
-void read_tif_image(tdata_t *image,TIFF *tif,int h,uint16_t spp, uint16_t tif_config)
+void read_tif_image(tdata_t *image,TIFF *tif,int h,int w,uint16_t spp, uint16_t tif_config, int is_16_bit_image, int ROWSIZE)
 {
     int32_t y ;
-    /* read a row */
-    for(y = 0 ; y < h ; y++) {
-	if(tif_config == PLANARCONFIG_CONTIG) {
-	    TIFFReadScanline(tif,image[y],y,0) ;
-	} else if(tif_config == PLANARCONFIG_SEPARATE) {
-	    uint16_t s ;
 
-	    for(s = 0 ; s < spp ; s++)
-		TIFFReadScanline(tif,image[y],y,s) ;
+    if(is_16_bit_image == 0) {
+	tdata_t *buf ;
 
-	} else {
-	    fprintf(stderr, "Cannot read planar configuration of tiff image, config=%d!\n", (int)tif_config) ;
-	    exit(1) ;
+	buf = (tdata_t) _TIFFmalloc(ROWSIZE/2);
+
+	for(y = 0 ; y < h ; y++) {
+	    if(tif_config == PLANARCONFIG_CONTIG) {
+		TIFFReadScanline(tif,buf,y,0) ;
+	    } else if(tif_config == PLANARCONFIG_SEPARATE) {
+		uint16_t s ;
+
+		for(s = 0 ; s < spp ; s++)
+		    TIFFReadScanline(tif,buf,y,s) ;
+
+	    } else {
+		fprintf(stderr, "Cannot read planar configuration of tiff image, config=%d!\n", (int)tif_config) ;
+		exit(1) ;
+	    }
+
+
+	    for(int x=0 ; x < w ; x++) {
+
+		for(int c=0 ; c < 4 ; c++) {
+		    // 8 to 16 bit conversion.  Note this will map 255 to 65535, and 0 to 255
+		    uint32_t i32 = ((uint8_t *)(buf))[IMAGE_NSAMPLES*(x)+c] ;
+		    i32 += 1 ;
+		    i32 <<= 8 ;
+		    i32 -= 1 ;
+		    ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+c] = i32 ;
+		}
+
+	    }
+	}
+	_TIFFfree(buf) ;
+
+    } else {
+	for(y = 0 ; y < h ; y++) {
+	    if(tif_config == PLANARCONFIG_CONTIG) {
+		TIFFReadScanline(tif,image[y],y,0) ;
+	    } else if(tif_config == PLANARCONFIG_SEPARATE) {
+		uint16_t s ;
+
+		for(s = 0 ; s < spp ; s++)
+		    TIFFReadScanline(tif,image[y],y,s) ;
+
+	    } else {
+		fprintf(stderr, "Cannot read planar configuration of tiff image, config=%d!\n", (int)tif_config) ;
+		exit(1) ;
+	    }
 	}
     }
 }
@@ -595,14 +633,12 @@ float F_CIE2003_sun_only(float px, float py, float *pGamma, float *pTheta, float
     if(isnan(*pGamma)) {
 	fprintf(stderr, "NAN in F_CIE2003_sun_only, sun_x=%f sun_py=%f px=%f py=%f horizon_py=%f theta=%f gamma=%f\n",
 	    pData_fit->sun_x, pData_fit->sun_py, px, py, pData_fit->horizon_py, *pTheta, *pGamma) ;
-	float vp[3] ;
 #ifdef ORIGINAL_ANGLES
 	fprintf(stderr, "View: %f %f %f\n", view.A, view.B, view.C) ;
 	fprintf(stderr, "Sun: %f %f %f\n", V_sun.A, V_sun.B, V_sun.C) ;
 	float dotproduct = view.A*V_sun.A + view.B*V_sun.B + view.C*V_sun.C ;
 	fprintf(stderr, "dotproduct %f\n", dotproduct) ;
 	fprintf(stderr, "acos %f\n", acos(dotproduct)) ;
-	fprintf(stderr, "%f\n", vp[100000000]) ;
 #endif
 	exit(1) ;
     }
@@ -1235,8 +1271,14 @@ int main(int argc, char* argv[])
     TIFFGetField(tif, TIFFTAG_BITSPERSAMPLE, &BPS);
     TIFFGetField(tif, TIFFTAG_PLANARCONFIG, &TIF_CONFIG);
 
-    if(BPS != 16) {
-	fprintf(stderr, "FATAL:  skyfill only works with 16 bit tiff images\n") ;
+    int is_16_bit_image=0 ;
+
+    if(BPS == 16) {
+	is_16_bit_image=1 ;
+    } else if (BPS == 8) {
+	is_16_bit_image=0 ;
+    } else {
+	fprintf(stderr, "FATAL:  skyfill only works with 16 or 8 bit tiff images\n") ;
 	exit(1) ;
     }
 
@@ -1568,6 +1610,13 @@ int main(int argc, char* argv[])
 	    continue ;
 	}
 
+	if(!strcmp(argv[0], "-osd")) {
+	    pData->output_sample_data = 1 ;
+	    argc -= 1 ;
+	    argv += 1 ;
+	    continue ;
+	}
+
 	if(!strcmp(argv[0], "-r_tos_thresh")) {
 	    pData->repair_tos_thresh = atof(argv[1]) ;
 	    argc -= 2 ;
@@ -1807,7 +1856,13 @@ int main(int argc, char* argv[])
     if((int)ROWSIZE != (int)(input_W*BPS/8*SPP)) {
 	fprintf(stderr, "ROWSIZE is WRONG!, fixing...\n") ;
 	ROWSIZE = input_W*BPS/8*SPP ;
-	fprintf(stderr, "ROWSIZE is now %d\n", (int)ROWSIZE) ;
+    }
+
+    if(is_16_bit_image) {
+	fprintf(stderr, "16 bit image, ROWSIZE is now %d\n", (int)ROWSIZE) ;
+    } else {
+	ROWSIZE *= 2 ;
+	fprintf(stderr, "8 bit image, ROWSIZE is now %d\n", (int)ROWSIZE) ;
     }
 
     /* allocate memory for image */
@@ -1820,6 +1875,10 @@ int main(int argc, char* argv[])
 	    exit(1) ;
 	}
     }
+
+    read_tif_image(image,tif,input_H,input_W,SPP, TIF_CONFIG, is_16_bit_image, ROWSIZE) ;
+
+
 
     /* allocate memory for pixel_classification */
     pData->pixel_class = (uint8_t **)calloc(input_H, sizeof(uint8_t *)) ;
@@ -1834,8 +1893,6 @@ int main(int argc, char* argv[])
 	    pData->pixel_class[y][x] = 0 ;
 	}
     }
-
-    read_tif_image(image,tif,input_H,SPP, TIF_CONFIG) ;
 
 
     if(quick_test) {
@@ -2699,22 +2756,47 @@ writeout:
 
     }
 
-    srand(0) ;
     /* save image data */
-    for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
-/*  	if(! (y%200)) {  */
-/*  	    fprintf(stderr, "main:save row:%d\n", (int)y) ;  */
-/*  	}  */
-	if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
-	    TIFFWriteScanline(tifout,image[y],y,0) ;
-	} else if(TIF_CONFIG == PLANARCONFIG_SEPARATE) {
-	    uint16_t s ;
-	    for(s = 0 ; s < SPP ; s++)
-		TIFFWriteScanline(tifout,image[y],y,s) ;
-	} else {
-	    fprintf(stderr, "Cannot read planar configuration of tiff image, config=%d!\n", (int)TIF_CONFIG) ;
-	    exit(1) ;
+    if(is_16_bit_image == 1) {
+
+	for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
+	    if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
+		TIFFWriteScanline(tifout,image[y],y,0) ;
+	    } else if(TIF_CONFIG == PLANARCONFIG_SEPARATE) {
+		uint16_t s ;
+		for(s = 0 ; s < SPP ; s++)
+		    TIFFWriteScanline(tifout,image[y],y,s) ;
+	    } else {
+		fprintf(stderr, "Cannot write planar configuration of tiff image, config=%d!\n", (int)TIF_CONFIG) ;
+		exit(1) ;
+	    }
 	}
+
+    } else {
+	fprintf(stderr, "Save 8 bit tif image\n") ;
+
+	tdata_t *buf = (tdata_t) _TIFFmalloc(ROWSIZE/2);
+
+	for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
+	    for(int x=0 ; x < IMAGE_WIDTH ; x++) {
+		((uint8_t *)(buf))[IMAGE_NSAMPLES*x+0] = (uint8_t)(((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+0] >> 8) ;
+		((uint8_t *)(buf))[IMAGE_NSAMPLES*x+1] = (uint8_t)(((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+1] >> 8) ;
+		((uint8_t *)(buf))[IMAGE_NSAMPLES*x+2] = (uint8_t)(((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+2] >> 8) ;
+		((uint8_t *)(buf))[IMAGE_NSAMPLES*x+3] = (uint8_t)(((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+3] >> 8) ;
+	    }
+	    if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
+		TIFFWriteScanline(tifout,buf,y,0) ;
+	    } else if(TIF_CONFIG == PLANARCONFIG_SEPARATE) {
+		uint16_t s ;
+		for(s = 0 ; s < SPP ; s++)
+		    TIFFWriteScanline(tifout,buf,y,s) ;
+	    } else {
+		fprintf(stderr, "Cannot write planar configuration of tiff image, config=%d!\n", (int)TIF_CONFIG) ;
+		exit(1) ;
+	    }
+	}
+
+	_TIFFfree(buf) ;
     }
 
 cleanup_and_exit:
@@ -2787,7 +2869,7 @@ cleanup_and_exit:
 
 	    if(retval != -1) {
 		// add the ICC profile from the external file to the new tiff image
-		snprintf(cmd,999,"exiftool \"-icc_profile<=skyfill_tmp.icc\" %s\n", outfilename) ;
+		snprintf(cmd,999,"exiftool -overwrite_original \"-icc_profile<=skyfill_tmp.icc\" %s\n", outfilename) ;
 		printf("%s", cmd) ;
 		retval = system(cmd) ;
 	    }

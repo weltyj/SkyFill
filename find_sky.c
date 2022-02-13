@@ -1473,7 +1473,7 @@ void emboss1d(float *in, float *out, int ystart, int ymax)
 
 void bilateral_filter1d(float *in, float *out,int x,int ystart,int ymax,int width,float alpha,float beta)
 {
-    float g_d[width+1] ;
+    float* g_d=(float*)calloc(width+1, sizeof(float));
     for(int d=0 ; d < width+1 ; d++) {
 	g_d[d] = guassian((float)d, alpha) ;
     }
@@ -1504,6 +1504,7 @@ void bilateral_filter1d(float *in, float *out,int x,int ystart,int ymax,int widt
 
 	out[y] = new/sum_wgts ;
     }
+    free(g_d);
 }
 
 int add_to_rgb_sums(tdata_t *image, int x, int y, float *sum, float *sumsq)

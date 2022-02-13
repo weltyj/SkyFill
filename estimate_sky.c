@@ -220,8 +220,6 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 		predict_sky_hsv(px, py, hsv_hat) ;
 
-/*  		s_hat *= final_saturation_factor ;  */
-
 		hsv2rgb16(hsv_hat,rgb_hat) ;
 
 		set4cv_clip_check(image,x,y, rgb_hat, MAX16, pData);

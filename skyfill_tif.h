@@ -270,6 +270,8 @@ typedef struct skyfill_data
     unsigned char *column_sample_mask ; // user requested masked columns for sampling of sky pixels
     unsigned char *column_nonsky_repair_mask ; // user requested masked columns for repair of pixels identified as nonsky
 
+    int output_sample_data ;
+
 } SKYFILL_DATA_t ;
 
 // one more global

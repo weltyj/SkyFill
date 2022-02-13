@@ -2123,6 +2123,9 @@ void output_model_results(int n_samples, SKYFILL_DATA_t *pData)
 
 void output_normalized_sample_data(int n_normalized_samples, char filename[])
 {
+    if(pData_fit->output_sample_data == 0)
+	return ;
+
     FILE *fp = fopen(filename, "w") ;
 
     if(fp != NULL) {
@@ -2152,6 +2155,8 @@ void output_normalized_sample_data(int n_normalized_samples, char filename[])
 
 void output_sample_data(int n_samples, char filename[])
 {
+    if(pData_fit->output_sample_data == 0)
+	return ;
 
 #ifdef HOW_CAN_THIS_WORK_WITH_360_DEGREE_PANORAMAS
 	float FLmm=12. ; // focal length, mm
