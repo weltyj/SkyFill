@@ -37,12 +37,34 @@ endif()
 SET(SKYFILL_HEADER 
   mstat.h
   amoeba_06.h
+  colorspace_conversions.h
+  estimate_sky.h
+  feather_factor.h
+  find_sky.h
+  kmeans_rgb.h
+  mpfit.h
+  optimize.h
+  pixel_tests.h
+  repair_sky.h
+  sample_and_fit_sky_model.h
+  skyfill_tif.h
 )
 
 SET(SKYFILL_SOURCE
   amoeba_06.c
   mstat.c
   skyfill_tif.c
+  repair_sky.c
+  mstat.c
+  colorspace_conversions.c
+  pixel_tests.c
+  feather_factor.c
+  find_sky.c
+  estimate_sky.c
+  sample_and_fit_sky_model.c
+  optimize.c
+  kmeans_rgb.c
+  mpfit.c
 )
 
 # now create the executable

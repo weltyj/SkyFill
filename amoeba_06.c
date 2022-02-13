@@ -64,7 +64,7 @@ float amotry(float **p,float *y, float *psum,int ndim,float (*function)(),int ih
 
 
 
-int amoeba(float **p, float y[], int ndim,float ftol, int max_iter, float (*function)())
+int amoeba(float **p, float y[], int ndim,float ftol, int max_iter, float (*function)(), int verbose)
 {
     int i,j,ilo,ihi,inhi,mpts=ndim+1;
     float ytry,ysave,sum,rtol,*psum ;
@@ -100,7 +100,7 @@ int amoeba(float **p, float y[], int ndim,float ftol, int max_iter, float (*func
 #define TINY 1.e-16
 	    rtol=2.0*fabs(y[ihi]-y[ilo])/(fabs(y[ihi])+fabs(y[ilo]+TINY));
 
-	    if(0) {
+	    if(verbose) {
 
 		printf("iter=%d, rtol=%g, ftol=%g\n", iter, rtol, ftol) ;
 		for(i = 1 ; i <= ndim+1 ; i++) {
@@ -211,7 +211,7 @@ float AmoebaFit(float (*function)(), float tol, int itmax, int ndim, float guess
 
     if(verbose) printf("=======  INITIAL SIMPLEX ==============\n") ;
     y[1]=(*function)(p[1]);
-    print_parms(p[1],y[1],ndim) ;
+    if(verbose) print_parms(p[1],y[1],ndim) ;
 
     // now we don't need the +1 on "i" in the loop
     for (i=1;i<=ndim;i++) {
@@ -227,7 +227,7 @@ float AmoebaFit(float (*function)(), float tol, int itmax, int ndim, float guess
     }
     if(verbose) printf("=======================================\n") ;
 
-    int ilo = amoeba(p,y,ndim,tol,itmax,function) ;
+    int ilo = amoeba(p,y,ndim,tol,itmax,function,verbose) ;
 
     for (j=1;j<=ndim;j++) {
 	guesses[j] = p[ilo][j] ;
