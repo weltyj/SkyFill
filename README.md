@@ -114,12 +114,12 @@ the sky
 
 **other flags yet to be documented**
     * -nceos
-    * -fsrt <thresh> <ramp>
+    * -fsrt \<thresh\> \<ramp\>
     * -fsh \<l\> \<r\>
     * -msu <0|1|2>
-    * -r_tos_thresh <thresh>
-    * -sd <S>
-    * -fs <S>
+    * -r_tos_thresh \<thresh\>
+    * -sd \<S\>
+    * -fs \<S\>
 
  
  
