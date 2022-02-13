@@ -283,11 +283,13 @@ void read_tif_image(tdata_t *image,TIFF *tif,int h,int w,uint16_t spp, uint16_t 
 	    for(int x=0 ; x < w ; x++) {
 
 		for(int c=0 ; c < 4 ; c++) {
-		    // 8 to 16 bit conversion.  Note this will map 255 to 65535, and 0 to 255
-		    uint32_t i32 = ((uint8_t *)(buf))[IMAGE_NSAMPLES*(x)+c] ;
-		    i32 += 1 ;
-		    i32 <<= 8 ;
-		    i32 -= 1 ;
+		    // 8 to 16 bit conversion.  Note this will map 255 to 65535, and 0 to 0
+		    // it is functionally equivalent to i32 = (int)( (float)i * 65535./255. )
+		    // This scaling method is necessary, because 0 needs to be 0 after scaling, and 255 needs to be 65535
+		    // for the code to work correctly
+		    uint32_t i = ((uint8_t *)(buf))[IMAGE_NSAMPLES*(x)+c] ;
+		    uint32_t i32 = i << 8 ;
+		    i32 |= i ;
 		    ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*x+c] = i32 ;
 		}
 
