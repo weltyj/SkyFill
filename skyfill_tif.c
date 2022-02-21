@@ -1093,6 +1093,25 @@ static inline void dither_pixel(tdata_t *image, uint16_t x,uint16_t y)
     }
 }
 
+void draw_rect(tdata_t *image, uint16_t left, uint16_t right, uint16_t top, uint16_t bottom, uint16_t r, uint16_t g, uint16_t b, uint16_t a)
+{
+    if(left < 0) left=0 ;
+    if(right < 0) right=0 ;
+    if(left > IMAGE_WIDTH-1) left=IMAGE_WIDTH-1 ;
+    if(right > IMAGE_WIDTH-1) right=IMAGE_WIDTH-1 ;
+
+    if(top < 0) top=0 ;
+    if(bottom < 0) bottom=0 ;
+    if(top > IMAGE_HEIGHT-1) top=IMAGE_HEIGHT-1 ;
+    if(bottom > IMAGE_HEIGHT-1) bottom=IMAGE_HEIGHT-1 ;
+
+    for(int x=left ; x <= right ; x++) {
+	for(int y=top ; y <= bottom ; y++) {
+	    tif_set4c(image,x,y,r,g,b,a) ;
+	}
+    }
+}
+
 int main(int argc, char* argv[])
 {
     float depth_of_sample = 0.5 ; // how far into the sky to sample for hue,val and sat
@@ -2557,18 +2576,7 @@ int main(int argc, char* argv[])
 	    int feather_end_y = pData->start_of_sky[x] + (int)(sky_height*depth_of_fill+0.5) ;
 
 	    for(y = 0 ; y < feather_end_y ; y++) {
-<<<<<<< HEAD
-		for(int ch=0 ; ch < 3 ; ch++) {
-		    float f16 = (float)(((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch]) ;
-		    float dither = (float)(((rand()%128) - 64)*8) ;
-		    f16 += dither ;
-		    if(f16 < 0.0) f16 = 0.0 ;
-		    if(f16 > MAX16f-1.) f16 = MAX16f-1. ;
-		    ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+ch] = (uint16_t)f16 ;
-		}
-=======
 		dither_pixel(image,x,y) ;
->>>>>>> 2022.02.11
 
 #ifdef OLD
 		// red
@@ -2649,6 +2657,7 @@ writeout:
 		    }
 
 		    tif_set4c(image,x,y,HALF16,HALF16,HALF16,MAX16) ;
+		    tif_set4c(image,x,y+1,HALF16,HALF16,HALF16,MAX16) ;
 		}
 	    }
 
@@ -2664,6 +2673,8 @@ writeout:
 		if(yset > h-1) yset = h-1 ;
 
 		tif_set4c(image,x,yset,0,MAX16,0,MAX16) ;
+		if(yset < IMAGE_HEIGHT-1)
+		    tif_set4c(image,x,yset+1,0,MAX16,0,MAX16) ;
 	    }
 	}
 
@@ -2676,7 +2687,7 @@ writeout:
 		float fact = samples[i].abs_v_error[0] * 10. ;
 		if(fact > 1.) fact = 1. ;
 		uint16_t f = (uint16_t)(fact * (float)MAX16+0.5) ;
-		tif_set4c(image,xc,yc,f,f,f,MAX16) ;
+		draw_rect(image, xc-1, xc+1, yc-1, yc+1, f, f, f, MAX16) ;
 	    }
 	}
 
@@ -2687,15 +2698,11 @@ writeout:
 	    uint16_t t = pData_fit->test_extent_mask[i].t ;
 	    uint16_t b = pData_fit->test_extent_mask[i].b ;
 
-	    for(uint16_t x=l ; x <= r ; x++) {
-		tif_set4c(image,x,t,MAX16,HALF16,HALF16,MAX16) ;
-		tif_set4c(image,x,b,MAX16,HALF16,HALF16,MAX16) ;
-	    }
+	    draw_rect(image, l, r, t-1, t, MAX16, HALF16, HALF16, MAX16) ;
+	    draw_rect(image, l, r, b, b+1, MAX16, HALF16, HALF16, MAX16) ;
+	    draw_rect(image, l-1, l, t, b, MAX16, HALF16, HALF16, MAX16) ;
+	    draw_rect(image, r, r+1, t, b, MAX16, HALF16, HALF16, MAX16) ;
 
-	    for(uint16_t y=t ; y <= b ; y++) {
-		tif_set4c(image,r,y,MAX16,HALF16,HALF16,MAX16) ;
-		tif_set4c(image,l,y,MAX16,HALF16,HALF16,MAX16) ;
-	    }
 	}
     }
 
