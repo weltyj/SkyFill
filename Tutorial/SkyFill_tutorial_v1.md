@@ -1,4 +1,6 @@
-Sunday, 20. February 2022 06:47AM 
+Monday, 21. February 2022 08:41AM 
+
+
 #A Sky Fill tutorial
 Do you have a  [stitched](http://hugin.sourceforge.net/) panorama that doesn't have as much blue sky at the top as you want? ![Pan1](Skyscraper.jpg  "Pan1")
 
@@ -13,6 +15,10 @@ Let's get started.
 First create your panorama in hugin -- but when you set the crop area, now extend the top border of the crop right into the black area -- as high as you'd like the sky to be extended:
 
 ![hugin_crop](hugin_crop.jpg  "hugin crop")
+*Note -- Multiblend does not honor crops that extend above image data, you will have to use enblend*
+
+***
+
 
 Sky fill is a commandline application, so you will need to open a command window (aka terminal in linux, "dos window" in linux, ?? in Apple)
 
@@ -42,7 +48,7 @@ That is not an acceptable result.  Rerun skyfill, but add the "-d3" flag to star
 
 ![pan02 d3 flag](pan02_v2sfd3.jpg  "pan02 d3 flag")
 
-This is the original image, with some marks added by skyfill.  The red line at the top of the image represents the original top of image data found.  The brown line immediately below it is where the end of sky detection "turns on".  Most importantly, the green line marks the end of the sky, and the little black dots represent a sample pont for modelling the sky HSV.  The first, most obvious problem is that the sun and lens flare, and clouds have given a bad prediction of where the true end of sky is at.  This can be handled with a "test mask"
+This is the original image, with some marks added by skyfill.  The red line at the top of the image represents the original top of image data found.  The brown line immediately below it is where the end of sky detection "turns on".  Most importantly, the green line marks the end of the sky, and the little black dots represent a sample point for modelling the sky HSV.  The first, most obvious problem is that the sun and lens flare, and clouds have given a bad prediction of where the true end of sky is at.  This can be handled with a "test mask"
 
 First, mask out the sun and lens flare using the "-tm <left> <right> <top> <bottom>" option, and rerun skyfill still using the -d3 option:
 
@@ -58,7 +64,7 @@ Using this masking strategy -- here is what the skyfilled image looks like:
 
 ![pan02 mask 1](pan02_v2sf1.jpg  "pan02 mask 1")
 
-It looks marginally better around the sun, but there are some bad rectangles with strange colors that have appeared around the sun, as well as in the clouds on the left side.   These are caused by the sky modelling and blending algorithm detecting what appear to be incorrect colors in the original sky image.  With lens flare and sky, this approach can get very "confused" and produce these artifact.  This is the reason for the "-rm <left> <right>" mask -- it disables sky repair of original image.  This is the result after addition of the "-rm" mask:
+It looks marginally better around the sun, but there are some bad rectangles with strange colors that have appeared around the sun, as well as in the clouds on the left side.   These are caused by the sky modelling and blending algorithm detecting what appear to be incorrect colors in the original sky image.  With lens flare and sky, this approach can get very "confused" and produce these artifacts.  This is the reason for the "-rm <left> <right>" mask -- it disables sky repair of original image.  This is the result after addition of the "-rm" mask:
 
 
 ![pan02 mask 2](pan02_v2sf2.jpg  "pan02 mask 2")
