@@ -1,7 +1,7 @@
 Monday, 21. February 2022 08:41AM 
 
 
-#A Sky Fill tutorial
+# A Sky Fill tutorial
 Do you have a  [stitched](http://hugin.sourceforge.net/) panorama that doesn't have as much blue sky at the top as you want? ![Pan1](Skyscraper.jpg  "Pan1")
 
 [SkyFill](https://github.com/weltyj/SkyFill) is an application designed to fill the top of clear blue skies and give you the image you wish you had.
