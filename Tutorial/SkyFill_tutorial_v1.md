@@ -27,8 +27,9 @@ You will need to know the location of two things to run skyfill:
 2.  The location of your image.  For this example we'll call it /images/hugin_crop.tif
 
 Now you change to the location of your image, and run skyfill:
+
 	cd /images
-	/skyfill\_loc/skyfill\_tif hugin\_crop.tif hugin\_cropsf.tif
+	/skyfill_loc/skyfill_tif hugin_crop.tif hugin_cropsf.tif
 
 If your image is is relatively simple, like this one, with plenty of existing sky, a relatively simple horizon, and no clouds or jet trails in the sky, skyfill should have little trouble getting a good model of how the sky hue, saturation and values changes vertically from the horizon, and horizonally (left-right) across the sky, and will fill the sky.
 ![hugin_cropsf](hugin_cropsf.jpg  "hugin crop sf")
