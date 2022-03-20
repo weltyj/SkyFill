@@ -16,27 +16,37 @@ First let's get an understanding of the "sky model" SkyFill has created to estim
 The detected end of sky runs down to the horizon except on the two trees and clouds on the left, and an area on the right edge.
 
 Next, let's add the -fsr flag to turn on full sky replacement, and the -SSP flag, which will color the sky in grayscale, where black implies the pixel is not considered a sky pixel, and white implies the pixel is a sky pixel, keeping all our original masking flags:
-![](/home/welty/images/src/skyfill/git/SkyFill/Tutorial/pan02_v2sf_SSP_no_eos.jpg) 
+
+![ssp_no_eos](pan02_v2sf_SSP_no_eos.jpg "ssp no eos") 
+
 The left side of the image was completely masked off, so the "-m 0 490" mask needs to be removed, but we don't want sky color samples to occur in that area so we change the "-m 0 490" to "-sm 0 490"
-![](/home/welty/images/src/skyfill/git/SkyFill/Tutorial/pan02_v2sf_SSP_new_mask.jpg) 
+![new mask](pan02_v2sf_SSP_new_mask.jpg "new mask") 
 The next problem to handle is sky detection can't see "through" large objects in they sky like the tree branches, or thick clouds.  To handle this, and external file is created, with the same filename prefix as the image, but the suffix is ".eos"  (end of sky file).  In this file we'll put line segments that override the end of sky detection and cause SkyFill to consider any pixels from the top of the image down to the line segments as possible sky (or not).   Here is the .eos file for this image:
+
+>X Y
 >
-X Y
-0 142
-604 389
-669 436
-790 449
--1 -1
-2619 467
-2710 492
-2809 468
+>0 142
 >
+> 604 389
+> 
+> 669 436
+> 
+> 790 449
+> 
+> -1 -1
+> 
+> 2619 467
+> 
+> 2710 492
+> 
+> 2809 468
+
 
 The first line of the file is "X Y", and next lines are X,Y pairs that will be connected with line segments.  The "-1 -1" line breaks a current continguos set of line segments, the "2619 467" line starts a new contiguous set of line segments.   The first line MUST be "X Y", and subsequent lines MUST have a space between the X and Y values.  Here is what the previous image showing sky probabilities looks like now:
-![](/home/welty/images/src/skyfill/git/SkyFill/Tutorial/pan02_v2sf_SSP_eos.jpg) 
+![ssp eos](pan02_v2sf_SSP_eos.jpg "ssp eos") 
 
 SkyFill has classified the trees and foliage well (black), and clouds seem to be part sky, the original area of blown out sky due to the sun and lens flare is also not predicted to be 100% sky.   Here is what the image looks like if we remove the -SSP flag
-![](/home/welty/images/src/skyfill/git/SkyFill/Tutorial/pan02_v2sf_fsr.jpg) 
+![fsr](pan02_v2sf_fsr.jpg "fsr") 
 
 A couple of things are notably better in this image than where we started
 - The vertical edge at the left side of the image where there was a mask has been eliminated
