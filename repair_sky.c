@@ -497,7 +497,7 @@ int get_mean_rgb(tdata_t *image, int xc,int yc,double rcoef[],double gcoef[], do
 	fprintf(stderr, "GMR:      err x,y:%d,%d %f %f %f\n", x,y,r_err,g_err,b_err) ;
 #endif
 
-	// throw out point of different by more than 3% from mean ;
+	// throw out point of different by more than desired tolerance from mean ;
 	if(r_err > pData->repair_tos_thresh) continue ;
 	if(g_err > pData->repair_tos_thresh) continue ;
 	if(b_err > pData->repair_tos_thresh) continue ;
@@ -1051,6 +1051,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 
 	    fprintf(stderr, "RTOS fix sky left edge from x,y %d,%d to %d,%d\n", 0, y, xgood-1, y) ;
 	    for(x = 0 ; x < xgood ; x++) {
+		if(pData->column_mask[x] == 1) continue ;
 		float rhat = rcoef[0] + rcoef[1]*(float)x + rcoef[2]*(float)y + rcoef[3]*(float)y*(float)y ;
 		float ghat = gcoef[0] + gcoef[1]*(float)x + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		float bhat = bcoef[0] + bcoef[1]*(float)x + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
@@ -1090,6 +1091,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 	    fprintf(stderr, "RTOS fix sky right edge from x,y %d,%d to %d,%d\n", xgood+1, y, IMAGE_WIDTH-1,y) ;
 
 	    for(x = xgood+1 ; x < IMAGE_WIDTH ; x++) {
+		if(pData->column_mask[x] == 1) continue ;
 		float rhat = rcoef[0] + rcoef[1]*(float)x + rcoef[2]*(float)y + rcoef[3]*(float)y*(float)y ;
 		float ghat = gcoef[0] + gcoef[1]*(float)x + gcoef[2]*(float)y + gcoef[3]*(float)y*(float)y ;
 		float bhat = bcoef[0] + bcoef[1]*(float)x + bcoef[2]*(float)y + bcoef[3]*(float)y*(float)y ;
@@ -1235,7 +1237,7 @@ void repair_top_of_sky(tdata_t *image, int end_of_sky_is_known_flag, int phase, 
 	}
     }
 
-    if(phase == 11) {
+    if(!pData->full_sky_replacement && phase == 11) {
 	fprintf(stderr, "RTOS fill holes under opaque sections\n") ;
 
 	int *opaque_x = (int *)calloc(IMAGE_HEIGHT, sizeof(int)) ;

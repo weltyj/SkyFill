@@ -813,14 +813,20 @@ void predict_sky_hsv(float px, float py, float *hsv_hat)
 	hsv_hat[0]     = h_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level) ;
 	hsv_hat[1]     = s_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level, pData_fit->horizon_py) ;
 	hsv_hat[2] = v_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level) ;
+	if(hsv_hat[1] < 0.f) hsv_hat[1] = 0.f ;
+	if(hsv_hat[1] > 1.f) hsv_hat[1] = 1.f ;
+	if(hsv_hat[2] < 0.f) hsv_hat[2] = 0.f ;
+	if(hsv_hat[2] > 1.f) hsv_hat[2] = 1.f ;
     } else if(uses_CIE_model &  CIE_FULL_MODEL) {
 	float gamma, theta, cos_gamma ;
 	hsv_hat[0]     = h_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level) ;
 	hsv_hat[1]     = s_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level, pData_fit->horizon_py) ;
 	hsv_hat[2] = F_CIE2003(px, py, &gamma, &theta, &cos_gamma)/pData_fit->maximum_CIE_vhat ;
 	hsv_hat[2] *= pData_fit->sample_based_v_correction ; // in the CIE_MODEL_FULL, factor applied to predicted value.
-	if(hsv_hat[2] > 1.f) hsv_hat[2] = 1.f ;
+	if(hsv_hat[1] < 0.f) hsv_hat[1] = 0.f ;
+	if(hsv_hat[1] > 1.f) hsv_hat[1] = 1.f ;
 	if(hsv_hat[2] < 0.f) hsv_hat[2] = 0.f ;
+	if(hsv_hat[2] > 1.f) hsv_hat[2] = 1.f ;
     } else if(uses_CIE_model &  CIE_SUN_MODEL) {
 	float gamma, theta, cos_gamma ;
 	float hsv_hat_raw[3] ;
@@ -828,6 +834,10 @@ void predict_sky_hsv(float px, float py, float *hsv_hat)
 	hsv_hat_raw[0]     = h_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level) ;
 	hsv_hat_raw[1]     = s_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level, pData_fit->horizon_py) ;
 	hsv_hat_raw[2] = v_from_pxpy(px, py_hc, pData_fit->full_hsv_model_level) ;
+	if(hsv_hat[1] < 0.f) hsv_hat[1] = 0.f ;
+	if(hsv_hat[1] > 1.f) hsv_hat[1] = 1.f ;
+	if(hsv_hat[2] < 0.f) hsv_hat[2] = 0.f ;
+	if(hsv_hat[2] > 1.f) hsv_hat[2] = 1.f ;
 
 	float vhat_sun = F_CIE2003_sun_only(px, py, &gamma, &theta, &cos_gamma)/pData_fit->maximum_CIE_vhat ;
 
