@@ -97,7 +97,7 @@ the sky
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
 
 **Tutorials**
-There are three tutorials in the Tutorials folder:
+There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of SkyFill, and some of the underlying concepts
 
 
 **DEPENDENCIES**
