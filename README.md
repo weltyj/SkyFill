@@ -96,6 +96,9 @@ the sky
   * -sd \<S\> -- a factor applied to the esimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
 
+**Tutorials**
+There are three tutorials in the Tutorials folder:
+
 
 **DEPENDENCIES**
 * libtiff
