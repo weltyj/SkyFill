@@ -44,8 +44,11 @@ The sun is about double in size, but since the range is reduced a little bit of 
 Finishing up this tutorial, here is the original image
 ![original](2021_pan02_v2.jpg "original")
 
+Let's adjust the point at which pixels are transformed from sky actual values to modeled sky.  The flag is -fsrt, and the defaults
+are 0.9 200, which means when the probability function is 0.9 that the pixel is a sky pixel, blend it at 50% with the modeled value and 50% with the original value.  The ramp value of 200 is very steep.  By changing the midpoint from 0.9 to 0.95, and giving it a gentler ramp of 10, let's see what happens with the clouds on the left side.
+
 And our final image:
-![sun](pan02_v2sf_sun.jpg "sun")
+![sun3](pan02_v2sf_sun3.jpg "sun3")
 
 A small amout of editing in photoshop or darktable for the cloud and this will be a nice momento of a nice backpack, and I didn't have to haul along a tripod either!
 
