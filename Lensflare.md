@@ -1,5 +1,4 @@
 #Lens Flare
-
 Lensflare is a small utility added as an option to skyfill generate lens flare artifacts caused by the sun or other bright lights refracting/reflecting through camera lenses.
 
 It is not an attempt to create a true physical model of how flares are created in a lens, it is just a simple way to generate some flare and aperture ghosts  that is good enough to have a pleasantly realistic rendering
@@ -7,7 +6,8 @@ It is not an attempt to create a true physical model of how flares are created i
 Lensflare reads data from an external file, and applies the results to a current image buffer that is open in skyfill.
 
 ##Datafile Format
-The data file is a simple text file, with a small set of "commands", the commands are briefly
+The data file is a simple text file, with a small set of "commands",
+The commands are briefly
 
 - FILE - insert lines from an additional file
 - BLACKSKY -set background image to black for testing
