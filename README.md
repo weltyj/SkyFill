@@ -109,7 +109,7 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
 **Adding lensflare**
 
 Using a simple model, lens flare (rays, aperture ghosts) can be rendered onto the image
-There is [documentation][Lensflare.md] for a lens flare data file
+There is [documentation](Lensflare.md) for a lens flare data file
 
 
 **DEPENDENCIES**
