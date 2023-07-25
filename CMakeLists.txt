@@ -65,6 +65,7 @@ SET(SKYFILL_SOURCE
   optimize.c
   kmeans_rgb.c
   mpfit.c
+  lensflare.c
 )
 
 # now create the executable

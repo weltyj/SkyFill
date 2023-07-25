@@ -50,7 +50,7 @@ are 0.9 200, which means when the probability function is 0.9 that the pixel is 
 And our final image:
 ![sun3](pan02_v2sf_sun3.jpg "sun3")
 
-A small amout of editing in photoshop or darktable for the cloud and this will be a nice momento of a nice backpack, and I didn't have to haul along a tripod either!
+A small amount of editing in photoshop or darktable for the cloud and this will be a nice momento of a nice backpack, and I didn't have to haul along a tripod either!
 
 
 
