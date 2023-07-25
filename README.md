@@ -34,9 +34,15 @@ the sky
     http://cow.physics.wisc.edu/~craigm/idl/cmpfit.html
 
 ***Thanks to***
+
 * Thomas Modes for providing CMake functionality, and finding compilation issues on Windows.
 
+**Tutorials**
+
+There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of SkyFill, and some of the underlying concepts
+
 **Getting Started**
+
 * Create a 8 or 16 bit stitched panorama with hugin, it must be 4 channel.  Hugin sets alpha to 0 for areas with
   no image data.  You can aquire your image via another method but this is specifically designed for Hugin.  If you
   don't have Hugin and know the Horizontal FOV, specify it on the commandline with (-FOV \<degrees\>)
@@ -54,7 +60,8 @@ the sky
      the algorithm to move farther down the sky in a column.  Decreasing the tolerance will have the opposit effect.
 
 **Masks**
-* Masks are potentially an important option for handling images that are not simple situations with unobstructed clear sky at the top of the image
+
+* Masks are an important option for handling images that are not simple situations with unobstructed clear sky at the top of the image
 * Column Mask
   "-m \<l\> \<r\>"  -- this flag prevents any analysis, or changes to image columns from *l* to *r*
 * Sample Mask
@@ -67,6 +74,7 @@ the sky
   "-tm \<left\> \<right\> \<top\> \<bottom\>"  -- this flag identifies a rectangle that is skipped over for end of sky detection, and no sky samples are taken in the rectangle.  In the examples, this has been used to exclude regions with direct sun and lens flare that are in the actual sky area, but would be bad to use for detecting end of sky and for modelling the sky color
 
 **Normal sky replacement**
+
 * After a sky HSV model has been created by SkyFill, it then processes the image one column at a time. It blends the modelled sky (now starting at y=0), and blending to a y value that is 50% of the way from the first opaque pixel (top of sky), to the identified end of sky.  
 
 * The "-df \<D\>" flag determines how far down to stop the blending.  The default is 50%.    "-df 0", would leave the original sky pixels completely unchanged and only fill in the pixels above -- (leaving a noticeable seam due to errors from the sky model).
@@ -89,26 +97,33 @@ the sky
   * -G \<Gvalue\> -- This controls how much of the sun+modelled sky to use in replacing pixel values.  Think of this as a "blending factor" that overrides the normal top of sky to end of sky blending factor.  Gvalue is given as a proportional distance (where the proportions are 0 to 1 for both image width and image height)  Default is 0, so you *must* set this to a nonzero value to have an effect.  Try small values, .1 is a good first try
 
 **Miscellaneous Flags**
+
   * -nceos -- "no clip end of sky".  In full sky replacement mode, will disable feathering for any pixels up to end of sky.  If the sky model is different from the actual sky near the horizon, this may produce a more consistent result
   * -fsrt \<thresh\> \<ramp\> -- Sets the threshold and ramp for probability a pixel is identified as a sky pixel (and will be replaced).  Default thresh is 0.9, default ramp is 200.  Reasonable thresh values are 0.5 to 0.99.  Higher values result in less pixels identified as sky.  ramp changes how fast probability changes around thresh.  ramp of 10 gives a very slow change, while ramp of 200 gives a reasonably fast change.
   *  -fsh \<pl\> \<pr\> -- Fix Sky Hue.  If a small area of the sky has been blown out, the hue will be incorrect.  If there is also an area of sky adjacent to the blown out area, a repair can be attempted.  pl, and pr are the left and right markers for the area of the sky to attempt a repair.  They are expressed as a proportion, i.e "-fsh 0.75 1.0" will attempt to repair the right 25% of the image where sky is detected.
   * -msu \<0|1|2\>  -- run a smoothing filter over the sky after all processing is complete.  Recommended mode is "-msu 0", the other modes are experimental.
   * -sd \<S\> -- a factor applied to the esimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
+  * -lf <filename> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
 
-**Tutorials**
-There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of SkyFill, and some of the underlying concepts
+**Adding lensflare**
+
+Using a simple model, lens flare (rays, aperture ghosts) can be rendered onto the image
+There is [documentation][Lensflare.md] for a lens flare data file
 
 
 **DEPENDENCIES**
+
 * libtiff
 * exiftool
 
 **INSTALLATION**
+
 * it will compile cleanly using the enclosed Makefile on Linux
 * Thomas Modes has supplied a CMakeLists.txt file which allows use of the CMake system to compile on Linux or Windows or ???
 
 **UPDATES**
+
 Jan 1, 2022
 * Fixed bug in sky HSV model process
 * Automatic detection and attempted repair when top of sky is too dark
@@ -119,4 +134,5 @@ Dec 31, 2021
 * The sky HSV model has been improved, made more robust, and will likely change again.
 
 **TODO**
+
 * Probably isn't going to work for skies at dusk/dawn, need to test

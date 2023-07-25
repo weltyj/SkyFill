@@ -74,7 +74,7 @@ int raw_compute_feather_length(int x, int *pFeather_end_y, float depth_of_fill, 
 }
 
 // how much of the new estimate to use at pixel x, y
-float compute_feather_at_y(int x, int y, int feather_length, uint16_t b, float feather_factor, SKYFILL_DATA_t *pData)
+float compute_feather_at_y(int x, int y, int feather_length, uint16_t pixel_blue_value, float feather_factor, SKYFILL_DATA_t *pData)
 {
     //if(x == 0) {
 	//fprintf(stderr, "INFO: CFAY 1, x:%d y:%d sos:%d eos:%d fl:%d ff:%f\n", x, y, start_of_sky[x], end_of_sky[x], feather_length, feather_factor) ;
@@ -86,7 +86,7 @@ float compute_feather_at_y(int x, int y, int feather_length, uint16_t b, float f
     if(y >= pData->start_of_sky[x])
 	fp0 = 1.-((float)y-(float)pData->start_of_sky[x])/(float)feather_length ;
 
-    if(b < pData->floatBLK*MAX16) {
+    if(pixel_blue_value < pData->floatBLK*MAX16) {
 	// pixel is black, use 100% of predicted value
 	fp0 = 1.0 ;
     }

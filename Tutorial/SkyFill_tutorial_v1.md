@@ -74,4 +74,4 @@ This is much better, and perhaps may be good enough to move ahead with additiona
 
 The is why **Full Sky Replacement Mode** was developed.  It attempts to recognize pixels that are truly "clear sky", and replace or extend those, and leave other pixels as they are found.
 
-***More to come***
+Continue on to [Part 2](SkyFill_tutorial_fsr.md) of this tutorial

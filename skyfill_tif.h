@@ -107,8 +107,8 @@ extern struct V3D V_sun;
 #define IMAGE_PIXEL_X_TO_RELATIVE(x) ((float)( ((float)(x)/(float)(IMAGE_WIDTH-1)) -p_half_image_width))
 #define IMAGE_PIXEL_Y_TO_RELATIVE(y) ((float)(1.f-(float)(y)/(float)(IMAGE_HEIGHT-1)))
 
-#define IMAGE_RELATIVE_TO_PIXEL_X(px) (int)(((px)+p_half_image_width)*(float)(IMAGE_WIDTH-1)+0.5) ;
-#define IMAGE_RELATIVE_TO_PIXEL_Y(py) (int)((1.-(py))*(float)(IMAGE_HEIGHT-1)+0.5) ;
+#define IMAGE_RELATIVE_TO_PIXEL_X(px) (int)(((px)+p_half_image_width)*(float)(IMAGE_WIDTH-1)+0.5)
+#define IMAGE_RELATIVE_TO_PIXEL_Y(py) (int)((1.-(py))*(float)(IMAGE_HEIGHT-1)+0.5)
 
 // PX_WGT is for experiments only!!, not actually useful for model
 // heavy weight to samples in center of image
@@ -139,6 +139,16 @@ void predict_sky_h(float px, float py_hc, float *pH) ;
 void predict_sky_s(float px, float py_hc, float *pS) ;
 void predict_sky_v(float px, float py_hc, float *pV) ;
 struct V3D P3toV3(float x, float y, float z) ;
+
+// half space coefficients for 2D
+struct HS {
+    float A, B, C ;
+} ;
+
+
+// construct half space equation orthoganal to two points
+// x2,y2 is on the line, x1,y1 is a postive distance from the line
+struct HS half_space_from_pts(float x1, float y1, float x2, float y2) ;
 
 // more than 100 and this is probably not a clear enough sky for this app to work
 #define MAX_TEST_MASKS 100
@@ -179,6 +189,7 @@ typedef struct skyfill_data
     int show_raw_prediction ; // old model, shows the sky predicted values above the unchanged original image
     int show_sky_prediction ; // shows probability (greyscale) the pixel is a sky pixel
     int show_raw_error ;
+    int replace_only_transparent ;  // on final pass, only alter completely transparent (alpha==0), pixels ;
     int CIE_sky_index ; // if 3, will only use CIE coefs to predict given CIE index grid search
     int allowed_sky_type ;
     uint32_t n_estimate_sky_clipped ; // number of pixels at MAX16 during output of estimated pixel values
@@ -273,6 +284,9 @@ typedef struct skyfill_data
     int output_sample_data ;
 
 } SKYFILL_DATA_t ;
+
+// model lens flare
+int lens_flare(char *filename, tdata_t *image, int sun_x_pixel, int sun_y_pixel)  ;
 
 // one more global
 extern SKYFILL_DATA_t *pData_fit ;

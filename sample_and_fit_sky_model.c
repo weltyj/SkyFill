@@ -1964,8 +1964,13 @@ int sample_sky_points(int n_per_column, int n_columns,tdata_t *image,int16_t *st
 		if(pData->column_sample_mask[x] == 1) continue ;
 		if(pData->fix_sky_hue && sx>=pData->min_sky_hue_mask && sx <= pData->max_sky_hue_mask) continue ;
 
+		int max_sky_y = pData->end_of_sky[sx] ;
+
+		if(pData->manual_end_of_sky[sx] > 0 && pData->end_of_sky[sx] > pData->manual_end_of_sky[sx])
+		    max_sky_y = pData->manual_end_of_sky[sx] ;
+
 		for(sy = y0 ; sy < y1 ; sy++) {
-		    if(sy >= pData->start_of_sky[sx] && sy <= pData->end_of_sky[sx]) {
+		    if(sy >= pData->start_of_sky[sx] && sy <= max_sky_y) {
 
 			if(!is_in_test_mask(x,y)) {
 			    tif_get3cv(image,sx,sy,rgb) ;

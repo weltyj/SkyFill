@@ -53,4 +53,4 @@ A couple of things are notably better in this image than where we started
 - The clouds on the left side have not been "smeared" into the top of the image -- though most of the clouds have been reduced in intensity and the one larger one near the horizon looks artificial and will need some post processing
 - At the horizon, just right of center, the dark smear in the sky has been eliminated.
 
-The sun still isn't acceptable, and in the next part of this series we'll cover how to use the sun model.
+The sun still isn't acceptable, and in the next part of this series we'll cover how to use the sun model in [Part 3](SkyFill_tutorial_Sun_Model.md) of the tutorial.

@@ -95,6 +95,7 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->estimate_only=0 ;
     pData->show_raw_prediction=0 ; // old model
     pData->show_raw_error=0 ;
+    pData->replace_only_transparent=0 ;
     pData->show_sky_prediction=0 ;
     pData->CIE_sky_index=-1 ; // if 3, will only use CIE coefs to predict given CIE index grid search
     pData->allowed_sky_type = ALL_CIE_SKIES ;
@@ -1168,6 +1169,9 @@ int main(int argc, char* argv[])
     char outfilename[512] ;
     char ptofilename[512] ;
     char eosfilename[512] ;
+    char lensflarefilename[512] ;
+    lensflarefilename[0] = 0 ; // this one needs initialization here
+
     int interpolate_masked_columns=0 ;
     int interpolate_transparent_columns=0 ;
     int verbose_flag=0 ;
@@ -1358,6 +1362,13 @@ int main(int argc, char* argv[])
 
 	if(!strcmp(argv[0], "-bf")) {
 	    pData->final_box_filter=1 ;
+	    argc -= 1 ;
+	    argv += 1 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-rot")) {
+	    pData->replace_only_transparent=1 ;
 	    argc -= 1 ;
 	    argv += 1 ;
 	    continue ;
@@ -1587,6 +1598,13 @@ int main(int argc, char* argv[])
 	    pData->n_test_masks++ ;
 	    argc -= 5 ;
 	    argv += 5 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-LF")) {
+	    strcpy(lensflarefilename, argv[1]) ;
+	    argc -= 2 ;
+	    argv += 2 ;
 	    continue ;
 	}
 
@@ -2573,6 +2591,13 @@ int main(int argc, char* argv[])
 	depth_of_fill = save_depth_of_fill ;
     }
 
+
+
+    // render lens flare if requested
+    if(lensflarefilename[0] != 0) {
+	float sun_px = sun_x_angle2px(pData->sun_x) ;
+	lens_flare(lensflarefilename ,image, IMAGE_RELATIVE_TO_PIXEL_X(sun_px), IMAGE_RELATIVE_TO_PIXEL_Y(pData->sun_py)) ;
+    }
 
     int dither_sky=1 ;
     if(dither_sky) {

@@ -177,6 +177,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
     pData->n_estimate_sky_clipped = 0 ; // number of pixels clipped at MAX16 output by estimate_sky
 
     float sun_px = sun_x_angle2px(pData->sun_x) ;
+    float sun_x = IMAGE_RELATIVE_TO_PIXEL_X(sun_px) ;
+    float sun_y = IMAGE_RELATIVE_TO_PIXEL_Y(pData->sun_py) ;
 
     if(x0 < 0) x0=0 ;
     if(x1 > w-1) x1=w-1 ;
@@ -375,7 +377,16 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 		if(pData->full_sky_replacement) {
 /*  		    set4cv_clip_check(image,x,y, sp.rgb_hat, MAX16, pData);  */
-		    tif_set4c(image,x,y, sp.rgb_hat[0], sp.rgb_hat[1], sp.rgb_hat[2], MAX16) ;
+		    if(pData->replace_only_transparent == 0) {
+			tif_set4c(image,x,y, sp.rgb_hat[0], sp.rgb_hat[1], sp.rgb_hat[2], MAX16) ;
+		    } else {
+			// only overwrite pixel if the current alpha is 0 ;
+			uint16_t r,g,b,a ;
+			tif_get4c(image,x,y,r,g,b,a) ;
+			if(a == 0) {
+			    tif_set4c(image,x,y, sp.rgb_hat[0], sp.rgb_hat[1], sp.rgb_hat[2], MAX16) ;
+			}
+		    }
 		} else if(pData->show_sky_prediction) {
 		    uint16_t val = (uint16_t)(sp.p_hat * (float)MAX16) ;
 		    uint16_t vec[3] = {val,val,val} ;
