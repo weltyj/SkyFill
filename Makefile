@@ -4,8 +4,13 @@ SRC=skyfill_tif.c repair_sky.c amoeba_06.c mstat.c colorspace_conversions.c pixe
 OBJS=$(SRC:.c=.o)
 LIBS=-ltiff -lm
 
+all: skyfill_tif lensflare
+
 skyfill_tif : $(OBJS) Makefile
 	gcc $(CFLAGS) $(OBJS) $(LIBS) -o skyfill_tif
+
+lensflare : lensflare.c colorspace_conversions.o Makefile
+	gcc $(CFLAGS) -DLENSFLARE_MAIN lensflare.c colorspace_conversions.o $(LIBS) -o lensflare
 
 $(OBJS) : skyfill_tif.h sample_and_fit_sky_model.h feather_factor.h Makefile colorspace_conversions.h estimate_sky.h kmeans_rgb.h mpfit.h
  

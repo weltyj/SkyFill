@@ -104,7 +104,7 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
   * -msu \<0|1|2\>  -- run a smoothing filter over the sky after all processing is complete.  Recommended mode is "-msu 0", the other modes are experimental.
   * -sd \<S\> -- a factor applied to the esimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
-  * -lf <filename> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
+  * -LF <filename> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
 
 **Adding lensflare**
 

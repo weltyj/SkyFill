@@ -1,12 +1,116 @@
+#ifndef LENSFLARE_MAIN
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <malloc.h>
 #include <strings.h>
+#include <string.h>
 #include <ctype.h>
 
 #include "skyfill_tif.h"
 #include "colorspace_conversions.h"
+#else
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <malloc.h>
+#include <strings.h>
+#include <string.h>
+#include <ctype.h>
+#include "tiffio.h"
+#include "colorspace_conversions.h"
+
+// half space coefficients for 2D
+struct HS {
+    float A, B, C ;
+} ;
+
+// in case Windows MSVC, or 
+#define _USE_MATH_DEFINES
+#include <math.h>
+
+// A few truly global variables
+int32_t IMAGE_HEIGHT ;
+int32_t IMAGE_WIDTH ;
+uint16_t IMAGE_NSAMPLES ; // must be 16 bit, needed by call to tif library
+int IMAGE_HAS_ALPHA ;
+float p_half_image_width ; // scaled value of half the image width (use as X origin) ;
+
+/* coordinate system:
+	TIF files are read.  data is stored in image[] array.  Top left is (0,0), bottom right is (width-1,height-1) ;
+*/
+
+#define tif_b(image,x,y) (((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2])
+
+// macros to get or set rgb and alpha 
+#define tif_get3c(image,x,y,r,g,b) {\
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define tif_get3cv(image,x,y,array) {\
+		array[0] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		array[1] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		array[2] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define tif_get4cv(image,x,y,array) {\
+		array[0] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		array[1] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		array[2] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		array[3] = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		}
+#define dtif_get3c(image,x,y,r,g,b) {\
+		fprintf(stderr, "get image data at %d, %d\n", x, y) ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		}
+#define dtif_get4c(image,x,y,r,g,b,a) {\
+		fprintf(stderr, "get image data at %d, %d\n", x, y) ; \
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		}
+
+#define tif_get4c(image,x,y,r,g,b,a) {\
+		r = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] ; \
+		g = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] ; \
+		b = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] ; \
+		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		}
+
+#define tif_set3c(image,x,y,r,g,b) {\
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16_t)r; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16_t)g; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16_t)b; \
+		}
+
+#define tif_set4c(image,x,y,r,g,b,a) {\
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16_t)r; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16_t)g; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+2] = (uint16_t)b; \
+		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] = (uint16_t)a; \
+		}
+
+#define MAX16 65535
+#define HALF16 32767
+#define MAX16f 65535.f
+#define FMAX 1.e30f
+// value which is black
+#define BLK16 8621
+
+#define MIN(a,b) ( (a) < (b) ? (a) : (b) )
+#define MAX(a,b) ( (a) > (b) ? (a) : (b) )
+
+#define IMAGE_PIXEL_X_TO_RELATIVE(x) ((float)( ((float)(x)/(float)(IMAGE_WIDTH-1)) -p_half_image_width))
+#define IMAGE_PIXEL_Y_TO_RELATIVE(y) ((float)(1.f-(float)(y)/(float)(IMAGE_HEIGHT-1)))
+
+#define IMAGE_RELATIVE_TO_PIXEL_X(px) (int)(((px)+p_half_image_width)*(float)(IMAGE_WIDTH-1)+0.5)
+#define IMAGE_RELATIVE_TO_PIXEL_Y(py) (int)((1.-(py))*(float)(IMAGE_HEIGHT-1)+0.5)
+
+#endif
 
 // construct half space equation orthoganal to two points
 // x2,y2 is on the line, x1,y1 is a postive distance from the line
@@ -33,18 +137,6 @@ struct HS half_space_from_pts(float x1, float y1, float x2, float y2)
     if(f16 < 0.0) f16 = 0.0 ; \
     if(f16 > MAX16f-1.) f16 = MAX16f-1. ; \
 }
-
-// from
-// 0 to .5 => e is 10, b is .8, c is r_func*2*.9
-// .5 to 1 =>  e 10-(1.-r_func)/.65*9 is b is .8, c is .9
-// 1 to 2 => e=1, b=(2.-r_func)*.8, c=.9
-// 2+  b=0, e=r_func-2, c doesn't matter
-//rfunc e b
-//0.00     10 .9
-//0.25     10 .8
-//0.50	  2 .75
-//0.75	  1 .5
-//1.00	  0 .25
 
 void new_map_rfunc(float r_func, float *e, float *b, float *c)
 {
@@ -564,9 +656,18 @@ int parse_lens_flare_file_and_render_ghosts(char *filename, struct lens_flare_me
 	    }
 
 	    if(!strcasecmp("BLACKSKY", cmd)) {
+		float r,g,b ;
+		//int rval = sscanf(str, "%s%f%f%f", cmd, &r, &g, &b) ;
+		//printf("BLACKSKY rval=%d\n", rval) ;
+		if(sscanf(str, "%s%f%f%f", cmd, &r, &g, &b) != 4) {
+		    r=g=b=0. ;
+		}
+		r *= MAX16f ;
+		g *= MAX16f ;
+		b *= MAX16f ;
 		for(int x=0 ; x < IMAGE_WIDTH ; x++) {
 		    for(int y=0 ; y < IMAGE_HEIGHT ; y++) {
-			tif_set3c(image,x,y,0,0,0) ;
+			tif_set3c(image,x,y,r,g,b) ;
 		    }
 		}
 		continue ;
@@ -1390,3 +1491,181 @@ void render_simple_lens_flare(char *filename, struct lens_flare_metadata *md, td
 	}
     }
 }
+
+#ifdef LENSFLARE_MAIN
+int main(int argc, char* argv[])
+{
+
+    char outfilename[512] ;
+    char lensflarefilename[512] ;
+    lensflarefilename[0] = 0 ; // this one needs initialization here
+
+
+    if(argc < 4) {
+	fprintf(stderr, "%s <output_TIF_file> -LF <lensflare_command_file>", argv[0]) ;
+	exit(1) ;
+    }
+
+    strcpy(outfilename, argv[1]) ;
+
+    if(!strcmp(argv[2], "-LF")) {
+	strcpy(lensflarefilename, argv[3]) ;
+	argc -= 2 ;
+	argv += 2 ;
+    } else {
+	fprintf(stderr, "%s <output_TIF_file> -LF <lensflare_command_file>", argv[0]) ;
+	exit(1) ;
+    }
+
+    // Read the input tif image
+    int32_t x, y ;
+    int input_W=800 ;
+    int input_H=800 ;
+    int is_16_bit_image=1 ;
+    int BPS=8+8*is_16_bit_image ;
+    IMAGE_NSAMPLES=3 ;
+    int SPP=IMAGE_NSAMPLES ;
+    tdata_t *image ;
+    tsize_t ROWSIZE ;
+    ROWSIZE = input_W*BPS/8*SPP ;
+    IMAGE_HAS_ALPHA = IMAGE_NSAMPLES > 3 ? 1 : 0 ;
+
+    IMAGE_HEIGHT = (int32_t)input_H ; // set global variable
+    IMAGE_WIDTH = (int32_t)input_W ; // set global variable
+
+    if((int)ROWSIZE != (int)(input_W*BPS/8*SPP)) {
+	fprintf(stderr, "ROWSIZE is WRONG!, fixing...\n") ;
+	ROWSIZE = input_W*BPS/8*SPP ;
+    }
+
+    if(is_16_bit_image) {
+	fprintf(stderr, "16 bit image, ROWSIZE is now %d\n", (int)ROWSIZE) ;
+    } else {
+	ROWSIZE *= 2 ;
+	fprintf(stderr, "8 bit image, ROWSIZE is now %d\n", (int)ROWSIZE) ;
+    }
+
+    /* allocate memory for image */
+    image = (tdata_t *)calloc(input_H, sizeof(tdata_t *)) ;
+
+    for(int y = 0 ; y < input_H ; y++) {
+	image[y] = (tdata_t) _TIFFmalloc(ROWSIZE);
+	if(image[y] == NULL) {
+	    fprintf(stderr, "Failed to alloc memory for image at row %d\n", y) ;
+	    exit(1) ;
+	}
+    }
+
+    for(x = 0 ; x < IMAGE_WIDTH  ; x++) {
+	for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
+
+	    if(IMAGE_HAS_ALPHA) {
+		tif_set4c(image,x,y,0,0,0,1) ;
+	    } else {
+		tif_set3c(image,x,y,0,0,0) ;
+	    }
+
+	}
+    }
+
+    int sun_x = IMAGE_WIDTH/2 ;
+    int sun_y = IMAGE_HEIGHT/2 ;
+
+    // render lens flare if requested
+    if(lensflarefilename[0] != 0) {
+	lens_flare(lensflarefilename ,image, sun_x, sun_y) ;
+    }
+
+    TIFF* tifout = NULL ; // may not be used if just refitting models for analysis
+    tifout = TIFFOpen(outfilename, "w");
+    uint16_t TIF_CONFIG = PLANARCONFIG_CONTIG ;
+
+    // prepare output image to have same tags as input image
+    uint16_t alltags[] = {
+	TIFFTAG_IMAGEWIDTH,
+	TIFFTAG_IMAGELENGTH,
+	TIFFTAG_BITSPERSAMPLE,
+	TIFFTAG_SAMPLESPERPIXEL,
+	TIFFTAG_ROWSPERSTRIP,
+	TIFFTAG_ORIENTATION,
+	TIFFTAG_PLANARCONFIG,
+	TIFFTAG_PHOTOMETRIC,
+	TIFFTAG_SAMPLEFORMAT,
+	TIFFTAG_COMPRESSION,
+    } ;
+
+
+
+/*  setting i:0, tag number 256 to 2810, in output file  */
+/*  setting i:1, tag number 257 to 867, in output file  */
+/*  setting i:2, tag number 258 to 16, in output file  */
+/*  setting i:3, tag number 277 to 4, in output file  */
+/*  setting i:4, tag number 278 to 93, in output file  */
+/*  setting i:5, tag number 274 to 1, in output file  */
+/*  setting i:6, tag number 284 to 1, in output file  */
+/*  setting i:7, tag number 262 to 2, in output file  */
+/*  setting i:8, tag number 339 to 1, in output file  */
+/*  setting i:9, tag number 259 to 5, in output file  */
+
+
+    TIFFSetField(tifout, TIFFTAG_IMAGEWIDTH, (uint32_t)IMAGE_WIDTH);
+    TIFFSetField(tifout, TIFFTAG_IMAGELENGTH, (uint32_t)IMAGE_HEIGHT);
+    TIFFSetField(tifout, TIFFTAG_BITSPERSAMPLE, (uint32_t)BPS);
+    TIFFSetField(tifout, TIFFTAG_SAMPLESPERPIXEL, (uint32_t)SPP);
+/*      TIFFSetField(tifout, TIFFTAG_ROWSPERSTRIP, (uint32_t)93);  */
+    TIFFSetField(tifout, TIFFTAG_ROWSPERSTRIP, TIFFDefaultStripSize(tifout,IMAGE_WIDTH*SPP));
+    TIFFSetField(tifout, TIFFTAG_ORIENTATION, (uint32_t)1);
+    TIFFSetField(tifout, TIFFTAG_PLANARCONFIG, (uint32_t)1);
+
+    TIFFSetField(tifout, TIFFTAG_PHOTOMETRIC, (uint32_t)2);
+    TIFFSetField(tifout, TIFFTAG_SAMPLEFORMAT, (uint32_t)1);
+    TIFFSetField(tifout, TIFFTAG_COMPRESSION, (uint32_t)5);
+
+    /* save image data */
+
+    if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
+	printf("TIF samples stored contiguously\n") ;
+    } else {
+	printf("TIF samples stored separately\n") ;
+    }
+
+    uint16_t r,g,b ;
+    tif_get3c(image,100,100,r,g,b) ;
+
+
+    printf("value of 100,100  is %d,%d,%d\n", r, g, b) ;
+
+
+    for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
+	if(TIF_CONFIG == PLANARCONFIG_CONTIG) {
+	    if(TIFFWriteScanline(tifout,image[y],y,0) < 0) {
+		printf("Error writing contigous row %d\n", y) ;
+		exit(1) ;
+	    }
+	} else if(TIF_CONFIG == PLANARCONFIG_SEPARATE) {
+	    uint16_t s ;
+	    for(s = 0 ; s < SPP ; s++) {
+		if(TIFFWriteScanline(tifout,image[y],y,s) < 0) {
+		    printf("Error writing separate row %d, component %d\n", y, s) ;
+		    exit(1) ;
+		}
+	    }
+	} else {
+	    fprintf(stderr, "Cannot write planar configuration of tiff image, config=%d!\n", (int)TIF_CONFIG) ;
+	    exit(1) ;
+	}
+    }
+
+
+    TIFFClose(tifout);
+
+    fprintf(stderr, "free-ing image memory\n") ;
+
+    /* free memory for image */
+
+    for(y = 0 ; y < IMAGE_HEIGHT ; y++) {
+	_TIFFfree(image[y]) ;
+    }
+
+}
+#endif

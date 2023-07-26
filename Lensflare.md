@@ -3,7 +3,14 @@ Lensflare is a small utility added as an option to skyfill generate lens flare a
 
 It is not an attempt to create a true physical model of how flares are created in a lens, it is just a simple way to generate some flare and aperture ghosts  that is good enough to have a pleasantly realistic rendering
 
-Lensflare reads data from an external file, and applies the results to a current image buffer that is open in skyfill.
+Lensflare reads data from an external command file, and applies the results to a current image buffer that is open in skyfill.
+
+## Units
+
+- x,y positions on the image are proportions. 0,0 is upper left, 1,1 is lower right
+- angles are in degrees
+- CA (chromatic aberration) is pixels, per 1000 pixels distance from the sun center
+- ray length radius, and ghost radius are pixels
 
 ## Datafile Format
 The data file is a simple text file, with a small set of "commands",
@@ -50,11 +57,13 @@ The commands are briefly
 
 **IMAGE_CENTER < x y > defines the true center of the image to be x y. Units are a proportion, (default is imagewidth/2, imageheight/2)**
 
-**SUN_CENTER < x y > defines the location of the sun (generating the rays) to be x y. Units are a proportion, (default is imagewidth/2, imageheight/2)**  The location of the sun relative to the image center changes the rendering of rays and aperture ghosts
+**SUN_CENTER < x y > defines the location of the sun (generating the rays) to be x y. Units are a proportion, (default is imagewidth/2, imageheight/2)** 
 
-**MOVE_CENTER < dx dy > move both IMAGE_CENTER and SUN_CENTER by dx, dy**
+__*The location of the sun relative to the image center changes the rendering of aperture ghosts, the farther the distance between sun and image center, the more the ghosts will spread apart along the radial line from the sun center*__
 
-**GHOST_LINE < angle CA > -- creates a series of ghost-like images in a line at *angle* degrees from the center, *CA* is amount of chromatic abberation applied to the ghosts**
+**MOVE_CENTER < dx dy > move both IMAGE_CENTER and SUN_CENTER by dx, dy, units are proportions**
+
+**GHOST_LINE < angle CA > -- creates a series of ghost-like images in a line at *angle* degrees from the center, *CA* is amount of chromatic aberration applied to the ghosts**
 
 > additional lines that follow GHOST_LINE:
 
@@ -64,8 +73,9 @@ The commands are briefly
 -*radius* is the radius of the ghost in pixels
 - *H,S,V*  are hue,saturation and value components of ghost color
 - *p_poly* defines the shape of the ghosts, 0 to 1, 0 is circle, 1 is polygon with number of aperture leaves
-- 
-**GHOST_RING < n dist radius CA > -- creates a series of ghost-like images in a ring  at distance *dist* pixels  with radius *radius* pixels, *CA* is amount of chromatic abberation applied to the ghosts**
+- *fill*  how to fill the color, 0 is a ring, 1 a disk, 4 a more gaussian like fill.  *fill* is a real number from 0 to 4
+
+**GHOST_RING < n dist radius CA > -- creates a series of ghost-like images in a ring  at distance *dist* pixels  with radius *radius* pixels, *CA* is amount of chromatic aberration applied to the ghosts**
 
 > additional lines that follow GHOST_LINE:
 
@@ -76,3 +86,65 @@ The commands are briefly
 - *p_poly* defines the shape of the ghosts, 0 to 1, 0 is circle, 1 is polygon with number of aperture leaves
 - *fill*  how to fill the color, 0 is a ring, 1 a disk, 4 a more gaussian like fill.  *fill* is a real number from 0 to 4
 
+## Examples of flares and ghosts primitives
+![Flare samples](./examples/flare_samples1.jpg  "Flare samples")
+
+- Upper left is flare type 1, with 7 leaves and a back radius proportion of 0.5
+- Upper right is the same thing but flare type 2
+- Lower left is flare type 1, with 7 leaves and back radius proportion of 0.0
+- Lower right is the same thing but flare type 2
+
+![Ghost samples](./examples/ghost_samples1.jpg  "Ghost samples")
+
+Aperture ghost samples:
+
+- Row 1 -- circle shape with fill parameters (0,.167,.33,.5,.667,.84,1.0,1.67,1.33,1.5,1.667,1.84,2.0,3.0,4.0)
+- Row 2 -- Fill parameter 0.2, p_poly parameters (0,.1,.2,.3,.4,.5,.6,.7,.8,.9,1.,3.25,-2.00)
+- Row 3 -- fill parameter .25, circles, chromatic aberration set to 5
+- Row 4 -- fill parameter .25, circles, chromatic aberration set to 10
+- Row 5 -- fill parameter 1.25, circles, chromatic aberration set to 5
+- Row 6 -- fill parameter 1.25, circles, chromatic aberration set to 10
+
+## Complete example of a lens flare and ghosts on plain background
+![Lens example](./examples/lensflare_example_plain.jpg  "Lens example")
+
+## Complete example on skyfill result
+
+![Lens example with skyfill image](./examples/lensflare_example.jpg  "Lens example")
+
+Command file used to create complete example:
+```
+IMAGE_CENTER .45 .55
+LEAVES 6
+
+FLARE 2 850 .5
+
+SCALE 0 1 1.00 1.75 0.8
+
+GHOST_LINE -30 10
+.52 27   0 0.00 0.05 .52 1.5
+
+GHOST_LINE 0 10
+-.259 26   0 0.00 0.03 .259 1.5
+-.228 35   0 0.00 0.03 .228 1.5
+-.160 13 120 0.50 0.10 .160 1.5
+.103 15   0 0.00 0.05 .103 .5
+.133 15   0 0.00 0.05 .133 .5
+.185 04   0 0.50 0.40 .190 .6
+.210 03   0 0.00 0.50 .201 .6
+.229 04   0 0.00 0.50 1.00 .6
+.224 23   0 0.00 0.03 .224 .22
+.371 23   0 0.67 0.03 .371 .5
+.417 19   0 0.00 0.10 1 0.25
+.492 37 120 0.67 0.09 1 0.35
+.691 44   0 0.00 0.05 1 0.35
+1.00 78   0 0.00 0.12 1 0.35
+
+GHOST_LINE 0 1
+.790 61   0 0.00 0.08 0 .1
+
+GHOST_RING 100 20 10
+60   0 0.00 0.03 1 1.5
+90   0 0.00 0.03 1 1.5
+120   0 0.00 0.03 1 1.5
+```

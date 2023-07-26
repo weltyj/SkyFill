@@ -2019,7 +2019,7 @@ int main(int argc, char* argv[])
 		}
 	    } else {
 		if(TIFFGetField(tif, tag, &tmp)) {
-		    fprintf(stderr, "setting tag number %d in output file\n", tag) ;
+		    fprintf(stderr, "setting i:%d, tag number %d to %d, in output file\n", i, tag, (int)tmp) ;
 		    TIFFSetField(tifout, tag, tmp);
 		}
 	    }
