@@ -81,6 +81,10 @@ extern struct V3D V_sun;
 		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
 		}
 
+#define tif_get_alpha(image,x,y,a) {\
+		a = ((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+3] ; \
+		}
+
 #define tif_set3c(image,x,y,r,g,b) {\
 		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+0] = (uint16_t)r; \
 		((uint16_t *)(image[(y)]))[IMAGE_NSAMPLES*(x)+1] = (uint16_t)g; \

@@ -53,15 +53,15 @@ float raw_compute_feather_at_y(int x, int y, int feather_length, uint16_t b, flo
 
 int raw_compute_feather_length(int x, int *pFeather_end_y, float depth_of_fill, float feather_factor, int extra, SKYFILL_DATA_t *pData)
 {
-    float sky_height ;
+    float sky_length ;
 
     if(pData->depth_of_fill_is_absolute) {
-	sky_height = pData->depth_of_fill_absolute_y - pData->raw_start_of_sky[x] ;
+	sky_length = pData->depth_of_fill_absolute_y - pData->raw_start_of_sky[x] ;
     } else {
-	sky_height = pData->end_of_sky[x] - pData->start_of_sky[x] ;
+	sky_length = pData->end_of_sky[x] - pData->start_of_sky[x] ;
     }
 
-    *pFeather_end_y = pData->raw_start_of_sky[x] + (int)(sky_height*depth_of_fill+0.5) + extra ;
+    *pFeather_end_y = pData->raw_start_of_sky[x] + (int)(sky_length*depth_of_fill+0.5) + extra ;
 
     if(*pFeather_end_y > pData->end_of_sky[x]) *pFeather_end_y = pData->end_of_sky[x] ;
 
@@ -81,14 +81,11 @@ float compute_feather_at_y(int x, int y, int feather_length, uint16_t pixel_blue
     //} 
 
     // compute feathering amount
-    float fp0 = 1. ; // proportion of prediction to use
+    float fp0 = 1.0 ; // proportion of prediction to use
 
-    if(y >= pData->start_of_sky[x])
+    if( (pixel_blue_value >= pData->floatBLK*MAX16) && (y >= pData->start_of_sky[x]) ) {
+	// pixel is not black, and is at or below start of sky
 	fp0 = 1.-((float)y-(float)pData->start_of_sky[x])/(float)feather_length ;
-
-    if(pixel_blue_value < pData->floatBLK*MAX16) {
-	// pixel is black, use 100% of predicted value
-	fp0 = 1.0 ;
     }
 
     float fp1 = 1.-fp0 ;
@@ -100,11 +97,11 @@ float compute_feather_at_y(int x, int y, int feather_length, uint16_t pixel_blue
 	exit(1) ;
     }
 
-    if(y == pData->end_of_sky[x]) {
+/*      if(y == pData->end_of_sky[x]) {  */
 	// make the end of sky pixel half estimated
 /*  	fp0 = .5 ;  */
 /*  	fp1 = .5 ;  */
-    }
+/*      }  */
 
     if(fp0 < 0.0) {
 	fprintf(stderr, "FATAL: CFAY 2, fp0:%f x:%d y:%d sos:%d fl:%d ff:%f\n", fp0, x, y, pData->start_of_sky[x], feather_length, feather_factor) ;
@@ -117,15 +114,15 @@ float compute_feather_at_y(int x, int y, int feather_length, uint16_t pixel_blue
 
 int compute_feather_length_with_eos(int x, int *pFeather_end_y, float depth_of_fill, float feather_factor, int extra, SKYFILL_DATA_t *pData, int end_of_sky)
 {
-    float sky_height ;
+    float sky_length ;
 
     if(pData->depth_of_fill_is_absolute) {
-	sky_height = pData->depth_of_fill_absolute_y - pData->start_of_sky[x] ;
+	sky_length = pData->depth_of_fill_absolute_y - pData->start_of_sky[x] ;
     } else {
-	sky_height = end_of_sky - pData->start_of_sky[x] ;
+	sky_length = end_of_sky - pData->start_of_sky[x] ;
     }
 
-    *pFeather_end_y = pData->start_of_sky[x] + (int)(sky_height*depth_of_fill+0.5) + extra ;
+    *pFeather_end_y = pData->start_of_sky[x] + (int)(sky_length*depth_of_fill+0.5) + extra ;
 
     if(*pFeather_end_y > end_of_sky) *pFeather_end_y = end_of_sky ;
 

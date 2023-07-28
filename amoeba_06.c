@@ -12,8 +12,11 @@
 /*** !!! IMPORTANT NOTE:  Indexing starts at 1, not zero, based on old FORTRAN code!!! ***/
 /*** ... and, this is some pretty awful code which is based on the original Numerical Recipies in C */
 
-#define GET_PSUM for (j=1;j<=ndim;j++) { for (i=1,sum=0.0;i<=mpts;i++)\
-						sum += p[i][j]; psum[j]=sum;}
+#define GET_PSUM for (j=1;j<=ndim;j++) {\
+		 for (i=1,sum=0.0;i<=mpts;i++) {\
+		    sum += p[i][j]; psum[j]=sum;\
+		    }\
+		  }
 
 static float constraints_lo[100], constraints_hi[100] ;
 static int n_iter=0 ;

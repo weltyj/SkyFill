@@ -325,10 +325,17 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 		    float l2l_scale = 1./(1.-l2l_offset*2.) ;
 		    feather_prob = l2l_scale*(1./(1.+exp(-(feather_prob-L2L_B0)*L2L_B1))-l2l_offset) ;
 
+		    // On entry to this section of code, sp.p_hat contains the probabilty that this pixel is sky, which is set by get_prob_sky() above,
+		    // and only considers how close the image pixel hsv values are to the modelled (predicted) hsv for the sky at this x,y coordinate
+
 		    // Now we have 3 factors to consider of how much of the predicted pixel color to use
-		    // 1. p_hat -- the amount of predicted value to use only with consideration if the pixel looks like a sky pixel
-		    // 2. feather_prob -- the amount of predicted value to use 100% at the top of the original sky, to 0% at the depth of fill level
+		    // 1. sp.p_hat -- the amount of predicted value to use only with consideration if the pixel looks like a sky pixel
+		    // 2. feather_prob -- the amount of predicted value to use: 100% at the top of the original sky, to 0% at the depth of fill level
 		    // 3. image_wgt_sun -- override for how much predicted value to use given the nearness to the sun
+
+		    // When this section of code is completed, sp.p_hat will hold the proportion of the predicted sky value to apply to the pixel,
+		    // if sp.p_hat is 1, the pixel will match the predicted sky hsv, if sp.p_hat is 0, the pixel will be unchanged.  Everthing else is
+		    // a linear blending...
 
 		    if(pData->column_nonsky_repair_mask[x] == 0) {
 			if(sp.p_hat < feather_prob) sp.p_hat = feather_prob ;
@@ -381,8 +388,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 			tif_set4c(image,x,y, sp.rgb_hat[0], sp.rgb_hat[1], sp.rgb_hat[2], MAX16) ;
 		    } else {
 			// only overwrite pixel if the current alpha is 0 ;
-			uint16_t r,g,b,a ;
-			tif_get4c(image,x,y,r,g,b,a) ;
+			uint16_t a ;
+			tif_get_alpha(image,x,y,a) ;
 			if(a == 0) {
 			    tif_set4c(image,x,y, sp.rgb_hat[0], sp.rgb_hat[1], sp.rgb_hat[2], MAX16) ;
 			}
@@ -422,6 +429,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 			if(c_max2 < b) c_max2 = b ;
 
 			if(c_max1 > c_max0 && c_max1 > c_max2) {
+			    // need to go one farther down, increase ymax and set flag indicatint this has happened
 			    ymax++ ;
 			    one_more_applied=1 ;
 			}
@@ -434,17 +442,22 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	goto estimate_sky_cleanup ;
     }
 
-    // need to generate correction factors by column
+    // THIS IS THE ORIGINAL, NON full sky replacement code
+    // as it moves column by column, it determines local column corrections
+    // from actual pixel data needed to correct the sky prediction, and
+    // It does NOT handle a sun model!
 
+
+    // need to generate correction factors by column
     for(int x = x0 ; x <= x1 ; x++) {
 	if(pData->column_mask[x] == 1) continue ;
 
 
 	// to collect correction data for this column only look 25% into the column
-	float sky_height = pData->end_of_sky[x] - pData->start_of_sky[x] ;
+	float sky_length = pData->end_of_sky[x] - pData->start_of_sky[x] ;
 
 /*  	int feather_end_y = pData->end_of_sky[x] ;  */
-	int feather_end_y = pData->start_of_sky[x] + (int)(sky_height*.25+0.5) ;
+	int feather_end_y = pData->start_of_sky[x] + (int)(sky_length*.25+0.5) ;
 
 	if(feather_end_y > IMAGE_HEIGHT-1) feather_end_y = IMAGE_HEIGHT-1 ;
 	if(feather_end_y > end_of_sky[x]) feather_end_y = pData->end_of_sky[x] ;
@@ -461,9 +474,6 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 	for(int y = y0 ; y < y1 ; y++) {
 	    float hsv_hat[3] ;
-/*  	    float fp0 ;  */
-/*    */
-/*  	    fp0 = compute_feather_at_y(x, y, feather_length, HALF16, feather_factor, pData) ;  */
 
 	    if(xy_has_nonblack_pixel(image, x, y) == 0) continue ;
 	    sum_wgts=0. ;
@@ -473,9 +483,6 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
 
 	    predict_sky_hsv(px, py, hsv_hat) ;
-/*  	    shat *= 1.0 - sqrt(fp0)*(1.-pData->final_saturation_factor) ;  */
-
-/*  	    predict_sky_huesat_from_val(vhat, &hhat, &shat, &vhat, px, py) ;  */
 
 	    uint16_t rgb[3] ;
 	    tif_get3cv(image,x,y,rgb) ;
@@ -483,6 +490,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    float hsv[3] ;
 	    rgb2hsv16(rgb,hsv) ;
 
+	    // saturation becomes a weight
 	    sum_h += hsv[0]*hsv[1] ;
 	    sum_s += hsv[1] ;
 	    sum_v += hsv[2]*hsv[1] ;
