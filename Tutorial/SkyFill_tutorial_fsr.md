@@ -42,7 +42,7 @@ The next problem to handle is sky detection can't see "through" large objects in
 > 2809 468
 
 
-The first line of the file is "X Y", and next lines are X,Y pairs that will be connected with line segments.  The "-1 -1" line breaks a current continguos set of line segments, the "2619 467" line starts a new contiguous set of line segments.   The first line MUST be "X Y", and subsequent lines MUST have a space between the X and Y values.  Here is what the previous image showing sky probabilities looks like now:
+The first line of the file is "X Y", and next lines are X,Y pairs that will be connected with line segments.  The "-1 -1" line breaks a current contiguous set of line segments, the "2619 467" line starts a new contiguous set of line segments.   The first line MUST be "X Y", and subsequent lines MUST have a space between the X and Y values.  Here is what the previous image showing sky probabilities looks like now:
 ![ssp eos](pan02_v2sf_SSP_eos.jpg "ssp eos") 
 
 SkyFill has classified the trees and foliage well (black), and clouds seem to be part sky, the original area of blown out sky due to the sun and lens flare is also not predicted to be 100% sky.   Here is what the image looks like if we remove the -SSP flag

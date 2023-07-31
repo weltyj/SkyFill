@@ -5,7 +5,7 @@ Currently, it is designed to work with 4 channel, 8 or 16 bit TIFF files from Hu
 Because of artifacts created in jpeg compression, there is no attempt to provide I/O for jpeg files
 
 Having the corresponding .pto for the project is *extremely* helpful as skyfill
-is able to parse the .pto file for relavent information (FOV) to help predict
+is able to parse the .pto file for relevant information (FOV) to help predict
 the sky image needed to blend with the stitched image coming from Hugin
 
 *************************************************************************
@@ -44,8 +44,8 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
 **Getting Started**
 
 * Create a 8 or 16 bit stitched panorama with hugin, it must be 4 channel.  Hugin sets alpha to 0 for areas with
-  no image data.  You can aquire your image via another method but this is specifically designed for Hugin.  If you
-  don't have Hugin and know the Horizontal FOV, specify it on the commandline with (-FOV \<degrees\>)
+  no image data.  You can acquire your image via another method but this is specifically designed for Hugin.  If you
+  don't have Hugin and know the Horizontal FOV, specify it on the command line with (-FOV \<degrees\>)
 
 * Run it with skyfill\_tif \<inputimage\> \<outputimage\>
 
@@ -57,7 +57,7 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
   - Run skyfill with the -d3 flag to see where it identified the start and end of sky is at.  It will put a green line two pixels *below* where it has identified the end of sky, so you can visually see if the actual pixel color at the detected end of sky looks correct.
   - If the end of sky looks incorrect, the only option to fix it is by changing the tolerances for end of sky detection
      "-tol \<t\>" -- tolerance for determining edge of skyline at horizon, default is 3.5  Increasing the tolerance will cause
-     the algorithm to move farther down the sky in a column.  Decreasing the tolerance will have the opposit effect.
+     the algorithm to move farther down the sky in a column.  Decreasing the tolerance will have the opposite effect.
 
 **Masks**
 
@@ -65,17 +65,17 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
 * Column Mask
   "-m \<l\> \<r\>"  -- this flag prevents any analysis, or changes to image columns from *l* to *r*
 * Sample Mask
-  "-sm \<l\> \<r\>"  -- this flag prevents using image columns from *l* to *r* as estimates of clear sky for purposes of modelling the sky HSV values
+  "-sm \<l\> \<r\>"  -- this flag prevents using image columns from *l* to *r* as estimates of clear sky for purposes of modeling the sky HSV values
 * Repair Mask
   "-rm \<l\> \<r\>"  -- this flag prevents image columns from *l* to *r* from having changes make to pixels in the sky, though the area may still be used for sampling actual sky values
 * Non Sky Repair Mask
   "-nsrm \<l\> \<r\>"  -- this flag prevents image columns from *l* to *r* from having changes make to pixels in the sky which are classsified as likely to be not a sky pixel (i.e. a cloud, or a piece of vegetation)
 * Test Mask
-  "-tm \<left\> \<right\> \<top\> \<bottom\>"  -- this flag identifies a rectangle that is skipped over for end of sky detection, and no sky samples are taken in the rectangle.  In the examples, this has been used to exclude regions with direct sun and lens flare that are in the actual sky area, but would be bad to use for detecting end of sky and for modelling the sky color
+  "-tm \<left\> \<right\> \<top\> \<bottom\>"  -- this flag identifies a rectangle that is skipped over for end of sky detection, and no sky samples are taken in the rectangle.  In the examples, this has been used to exclude regions with direct sun and lens flare that are in the actual sky area, but would be bad to use for detecting end of sky and for modeling the sky color
 
 **Normal sky replacement**
 
-* After a sky HSV model has been created by SkyFill, it then processes the image one column at a time. It blends the modelled sky (now starting at y=0), and blending to a y value that is 50% of the way from the first opaque pixel (top of sky), to the identified end of sky.  
+* After a sky HSV model has been created by SkyFill, it then processes the image one column at a time. It blends the modeled sky (now starting at y=0), and blending to a y value that is 50% of the way from the first opaque pixel (top of sky), to the identified end of sky.  
 
 * The "-df \<D\>" flag determines how far down to stop the blending.  The default is 50%.    "-df 0", would leave the original sky pixels completely unchanged and only fill in the pixels above -- (leaving a noticeable seam due to errors from the sky model).
 
@@ -91,10 +91,10 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
   * -sx \<Xangle\> -- in degrees -- Xangle of 0 is the middle of the image, Xangle=-FOV/2 is left side of image, Xangle=FOV/2 is right side of image
   * -sy \<Py\> -- as a proportion, 1 is top of image, 0 is bottom of image
   * --- note, you can put the sun outside of the image, and get just some glow from the modelled sun to appear in the image
-  * -C \<Cvalue\> -- overall brighness of the sun.  Default is 2
+  * -C \<Cvalue\> -- overall brightness of the sun.  Default is 2
   * -D \<Dvalue\> -- overall diameter of the sun.  Default is .01  You *must* set this to a large value, try the range 1 to 10.  The "size" of the generated sun will be somewhat linear with respect to the Dvalue chosen
-  * -F \<Fvalue\> -- Blending amount of the modeled sun into the normal modelled sky, default is 0.5
-  * -G \<Gvalue\> -- This controls how much of the sun+modelled sky to use in replacing pixel values.  Think of this as a "blending factor" that overrides the normal top of sky to end of sky blending factor.  Gvalue is given as a proportional distance (where the proportions are 0 to 1 for both image width and image height)  Default is 0, so you *must* set this to a nonzero value to have an effect.  Try small values, .1 is a good first try
+  * -F \<Fvalue\> -- Blending amount of the modeled sun into the normal modeled sky, default is 0.5
+  * -G \<Gvalue\> -- This controls how much of the sun+modeled sky to use in replacing pixel values.  Think of this as a "blending factor" that overrides the normal top of sky to end of sky blending factor.  Gvalue is given as a proportional distance (where the proportions are 0 to 1 for both image width and image height)  Default is 0, so you *must* set this to a nonzero value to have an effect.  Try small values, .1 is a good first try
 
 **Miscellaneous Flags**
 
@@ -102,7 +102,7 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
   * -fsrt \<thresh\> \<ramp\> -- Sets the threshold and ramp for probability a pixel is identified as a sky pixel (and will be replaced).  Default thresh is 0.9, default ramp is 200.  Reasonable thresh values are 0.5 to 0.99.  Higher values result in less pixels identified as sky.  ramp changes how fast probability changes around thresh.  ramp of 10 gives a very slow change, while ramp of 200 gives a reasonably fast change.
   *  -fsh \<pl\> \<pr\> -- Fix Sky Hue.  If a small area of the sky has been blown out, the hue will be incorrect.  If there is also an area of sky adjacent to the blown out area, a repair can be attempted.  pl, and pr are the left and right markers for the area of the sky to attempt a repair.  They are expressed as a proportion, i.e "-fsh 0.75 1.0" will attempt to repair the right 25% of the image where sky is detected.
   * -msu \<0|1|2\>  -- run a smoothing filter over the sky after all processing is complete.  Recommended mode is "-msu 0", the other modes are experimental.
-  * -sd \<S\> -- a factor applied to the esimated sky saturation model, default is 1.0
+  * -sd \<S\> -- a factor applied to the estimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
   * -LF \<filename\> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
 

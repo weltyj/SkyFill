@@ -9,8 +9,8 @@ At the end of [Part 2](SkyFill_tutorial_fsr.md) of this tutorial, we were workin
 Now we would like to clean up the area around the sun.  SkyFill has a basic sun model, the parameters are:
 
 * Sun Position
-  "-sx \<d\> \<r\>"  -- sets the sun x postion to d, *d* is degrees (+/-) from the center of the image
-  "-sy \<py\> \<r\>"  -- sets the sun y postion to *py*, *py* is 0.0 at image bottom, 1.0 at top of image. *py* may be > 1.0
+  "-sx \<d\> \<r\>"  -- sets the sun x position to d, *d* is degrees (+/-) from the center of the image
+  "-sy \<py\> \<r\>"  -- sets the sun y position to *py*, *py* is 0.0 at image bottom, 1.0 at top of image. *py* may be > 1.0
 * Sun Diameter
   "-D \<value\> \<r\>"  -- sets the sun diameter, size is approximately *value* degrees (relative to horizontal FOV), default 1.0
 * Sun intensity relative to background
@@ -20,18 +20,18 @@ Now we would like to clean up the area around the sun.  SkyFill has a basic sun 
 * Range/falloff of sun model in sky
   "-G \<value\> \<r\>"  -- sets the range and falloff to override pixel values with sun or sky model.  Units are proportion of image width
 
-An important note about the "size" of the sun in photos.  The physical reality is the sun is much smaller than what you might first think is the sun diameter.  The reason for this is much of the area around the actual sun is blown out, which artificially increases the diameter of the percieved sun in the image.  The model used here in no way attempts to be physically accurate, but attempts to make a sun image that mimics what the camera would have recorded.
+An important note about the "size" of the sun in photos.  The physical reality is the sun is much smaller than what you might first think is the sun diameter.  The reason for this is much of the area around the actual sun is blown out, which artificially increases the diameter of the perceived sun in the image.  The model used here in no way attempts to be physically accurate, but attempts to make a sun image that mimics what the camera would have recorded.
 
 Here are the values I have found that work well for this image
 "-C 6.5 -D 1.0 -F 1.0 -G 0.12 -sx -2.45 -sy .87"
 
-Which means, make the sun model very bright (-C 6.5), with diamter of 1 (-D 1.0).  Set the sun alpha to 1 (-F 1.0), and the range to 0.12 (-G 0.12).  ~put the sun 2.45 degrees left of the center, at 87% of the height.
+Which means, make the sun model very bright (-C 6.5), with diameter of 1 (-D 1.0).  Set the sun alpha to 1 (-F 1.0), and the range to 0.12 (-G 0.12).  ~put the sun 2.45 degrees left of the center, at 87% of the height.
 
 First let's look at how the (-G 0.12) has altered the probability of sky.  So we'll use the sun parameters plus the -SSP flag
 
 ![sun_ssp](pan02_v2sf_sun_ssp.jpg "sun ssp") 
 
-The -G flag works like this.  With a G set to 0.12, any pixel that is within a distance of 0.12 (proportion!), of the sun center is completely over ridden with the sky+sun model.  The distance values from 0.12 to 0.24 are ramped to 0.0, and the replacement probability is the maximum of the value determined by this distance model and the probabilty without the sun model override.
+The -G flag works like this.  With a G set to 0.12, any pixel that is within a distance of 0.12 (proportion!), of the sun center is completely over ridden with the sky+sun model.  The distance values from 0.12 to 0.24 are ramped to 0.0, and the replacement probability is the maximum of the value determined by this distance model and the probability without the sun model override.
 
 Here is the image without the "-SSP" flag:
 ![sun](pan02_v2sf_sun.jpg "sun")

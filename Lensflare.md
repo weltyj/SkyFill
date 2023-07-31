@@ -24,7 +24,7 @@ The commands are briefly
 - ROTATE -rotate about the image center the rays or ghosts that follow in the data file)
 - IMAGE_CENTER - set the location of the image center to form the flares/ghosts
 - GHOST_LINE - create a set of aperture ghosts in a line extending from the image center
-- GHOST_RING - create a set of aperture ghoss in a ring around the image center
+- GHOST_RING - create a set of aperture ghosts in a ring around the image center
 
 ## Detail of commands
 
@@ -47,7 +47,7 @@ The commands are briefly
 >FOR ALL ELEMENTS (rays & ghosts) that follow in the data file:
 
 - *a_h* is added to the hue
-- element saturation is muliplied by *s_s*
+- element saturation is multiplied by *s_s*
 - element value is multiplied by *s_v*
 - element radius is multiplied by *s_radius*
 - element distance is multiplied by *s_dist*
