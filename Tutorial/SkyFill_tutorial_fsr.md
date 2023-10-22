@@ -21,7 +21,7 @@ Next, let's add the -fsr flag to turn on full sky replacement, and the -SSP flag
 
 The left side of the image was completely masked off, so the "-m 0 490" mask needs to be removed, but we don't want sky color samples to occur in that area so we change the "-m 0 490" to "-sm 0 490"
 ![new mask](pan02_v2sf_SSP_new_mask.jpg "new mask") 
-The next problem to handle is sky detection can't see "through" large objects in they sky like the tree branches, or thick clouds.  To handle this, and external file is created, with the same filename prefix as the image, but the suffix is ".eos"  (end of sky file).  In this file we'll put line segments that override the end of sky detection and cause SkyFill to consider any pixels from the top of the image down to the line segments as possible sky (or not).   Here is the .eos file for this image:
+The next problem to handle is sky detection can't see "through" large objects in they sky like the tree branches, or thick clouds.  To handle this, a separate text file must be created, with the same filename prefix as the image, but the suffix is ".eos"  (end of sky file).  In this file we'll put line segments that override the end of sky detection and cause SkyFill to consider any pixels from the top of the image down to the line segments as possible sky (or not).   Here is the .eos file for this image:
 
 >X Y
 >

@@ -1,6 +1,9 @@
 # SkyFill
 Fill the top of clear skies in stitched panoramas
 
+Clear skies by definition do not have clouds.   Skyfill, with some appropriate masks can
+handle individual clouds in many situations, but not all.
+
 Currently, it is designed to work with 4 channel, 8 or 16 bit TIFF files from Hugin.
 Because of artifacts created in jpeg compression, there is no attempt to provide I/O for jpeg files
 
@@ -10,9 +13,10 @@ the sky image needed to blend with the stitched image coming from Hugin
 
 *************************************************************************
 As of Feb 12, 2022 This is alpha level code.  Major development has ended, and documentation has begun
-Only bugs found will be addressed.  Bugs do not include very hard cases of images where the sky is
-too complex for SkyFill to get a good estimate of where the sky is, and how to fill various areas of
-the sky
+Only bugs found will be addressed.
+
+Bugs do not include very hard cases of images where the sky is too complex (i.e. lots of overcast, or clouds,
+or foliage...) for SkyFill to get a good estimate of where the sky is, and how to fill various areas of the sky
 *************************************************************************
 
 **CREDITS**
@@ -100,11 +104,21 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
 
   * -nceos -- "no clip end of sky".  In full sky replacement mode, will disable feathering for any pixels up to end of sky.  If the sky model is different from the actual sky near the horizon, this may produce a more consistent result
   * -fsrt \<thresh\> \<ramp\> -- Sets the threshold and ramp for probability a pixel is identified as a sky pixel (and will be replaced).  Default thresh is 0.9, default ramp is 200.  Reasonable thresh values are 0.5 to 0.99.  Higher values result in less pixels identified as sky.  ramp changes how fast probability changes around thresh.  ramp of 10 gives a very slow change, while ramp of 200 gives a reasonably fast change.
-  *  -fsh \<pl\> \<pr\> -- Fix Sky Hue.  If a small area of the sky has been blown out, the hue will be incorrect.  If there is also an area of sky adjacent to the blown out area, a repair can be attempted.  pl, and pr are the left and right markers for the area of the sky to attempt a repair.  They are expressed as a proportion, i.e "-fsh 0.75 1.0" will attempt to repair the right 25% of the image where sky is detected.
+  * -fsh \<pl\> \<pr\> -- Fix Sky Hue.  If a small area of the sky has been blown out, the hue will be incorrect.  If there is also an area of sky adjacent to the blown out area, a repair can be attempted.  pl, and pr are the left and right markers for the area of the sky to attempt a repair.  They are expressed as a proportion, i.e "-fsh 0.75 1.0" will attempt to repair the right 25% of the image where sky is detected.
   * -msu \<0|1|2\>  -- run a smoothing filter over the sky after all processing is complete.  Recommended mode is "-msu 0", the other modes are experimental.
   * -sd \<S\> -- a factor applied to the estimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
   * -LF \<filename\> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
+  * -fhsv \<fH\> \<fS\> \<fV\>-- Final sky HSV adjustment. Globally applied adjustments to predicted sky HSV.  \<fH\> is added to the hue prediction (hue range 0 to 360).  Saturation prediction is multipled by \<fS\>.  Value predicition is multiplied by \<fV\>.  This flag may be most useful with zenith blending.
+
+**Zenith Blending**
+* For panorama that include the zenith.  The following flag will cause the color of the image to become constant at the very top of the image.  This may be useful for images that don't have the zenith too.
+
+  * -zb \<zenith_blend_depth\> \<zenith_blend_end_factor\> -- The top of the image is forced to have a fixed color. The color is blended smoothly into the predicted sky color for lower parts of the image.  \<zenith_blend_depth\> controls how far down towards the end of sky to start blending the zenith color, it should be >= 0.5  \<zenith_blend_end_factor\> sets the end of sky for the final processing:
+    * 0.0 is the minimum end of sky found by the automated algorithm
+    * 1.0 is the maximum end of sky found by the automated algorithm
+  * "-zb 1.0 1.0" is a good first guess.
+  * see also the **-fhsv** flag.
 
 **Adding lensflare**
 

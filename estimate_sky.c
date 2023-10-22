@@ -167,6 +167,18 @@ float get_prob_sky(tdata_t *image, int x,int y, SKYFILL_DATA_t *pData, struct sk
     return p->prob_sky ;
 }
 
+// adjust a hsv tuple
+void apply_hsv_factors(float hsv[3], float hsv_factor[3])
+{
+    hsv[1] *= hsv_factor[1]  ;
+    hsv[2] *= hsv_factor[2]  ;
+
+    // adjust hue -- an additive adjustment for hue in the 0-360 range
+    hsv[0] += hsv_factor[0]  ;
+    if(hsv[0] < 0.) hsv[0] += 360. ;
+    if(hsv[0] > 360.) hsv[0] -= 360. ;
+}
+
 void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *end_of_sky,int16_t *final_end_of_sky,
 		    float depth_of_sample, int h, int w, float feather_factor, int debug, float depth_of_fill, int extra_feather_length, SKYFILL_DATA_t *pData)
 {
@@ -232,6 +244,47 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	goto estimate_sky_cleanup ;
     }
 
+    float zenith_hsv_hat[3] = {0.,0.,0.} ;
+    uint16_t zenith_rgb_hat[3] ;
+    uint16_t n_zenith_samples=0 ;
+
+    // need to determine average rgb for the zenith by getting the sky model values for all y==0
+    fprintf(stderr, "ZBD: %f\n", pData->zenith_blend_depth) ;
+
+    if(pData->zenith_blend_depth > 0.) {
+	for(int x = x0 ; x <= x1 ; x++) {
+	    if(pData->column_mask[x] == 1) continue ;
+
+	    int y=0 ; // only predict at very top of sky
+
+	    uint16_t a = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] ;
+
+	    if(a < HALF16 && y > pData->raw_start_of_sky[x]) continue ; // do not adjust transparent pixels below original start of sky
+
+	    // completely model sky color
+	    float px = IMAGE_PIXEL_X_TO_RELATIVE(x) ;
+	    float py = IMAGE_PIXEL_Y_TO_RELATIVE(y) ;
+
+	    float hsv_hat[3] ;
+	    predict_sky_hsv(px, py, hsv_hat) ;
+	    zenith_hsv_hat[0] += hsv_hat[0] ;
+	    zenith_hsv_hat[1] += hsv_hat[1] ;
+	    zenith_hsv_hat[2] += hsv_hat[2] ;
+	    n_zenith_samples++ ;
+	}
+
+	zenith_hsv_hat[0] /= (float)n_zenith_samples ;
+	zenith_hsv_hat[1] /= (float)n_zenith_samples ;
+	zenith_hsv_hat[2] /= (float)n_zenith_samples ;
+
+	fprintf(stderr, "Unadjusted Zenith HSV: %5.1f %6.4f %6.4f\n", zenith_hsv_hat[0], zenith_hsv_hat[1], zenith_hsv_hat[2]) ;
+	apply_hsv_factors(zenith_hsv_hat,pData->final_hsv_factor) ;
+	fprintf(stderr, "  Adjusted Zenith HSV: %5.1f %6.4f %6.4f\n", zenith_hsv_hat[0], zenith_hsv_hat[1], zenith_hsv_hat[2]) ;
+
+
+	hsv2rgb16(zenith_hsv_hat,zenith_rgb_hat) ;
+    }
+
     if(uses_CIE_model)
 	fprintf(stderr, "****************** Blending in sun model *****************\n") ;
 
@@ -250,6 +303,7 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 
 	    int feather_end_y ;
 	    int feather_length = compute_feather_length_with_eos(x, &feather_end_y, depth_of_fill, feather_factor, extra_feather_length, pData, ymax) ;
+	    int zenith_end_blend_y = (int)((float)feather_end_y * pData->zenith_blend_depth + 0.5) ;
 
 /*  	    ymax = IMAGE_HEIGHT-1 ;  */
 
@@ -299,6 +353,42 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 		struct sky_pixel_data sp ;
 		float prob_sky = get_prob_sky(image, x, y, pData, &sp) ;
 		float feather_prob = 1. ;
+
+// in full sky replacement mode adjusting the sky hsv before blending with zenith blend is not necessary
+#define ADJUST_HSV
+
+		if(y <= zenith_end_blend_y) {
+		    // feather in constant rgb for zenith
+
+		    if(y < pData->start_of_sky[x]) {
+#ifdef ADJUST_HSV
+			// apply global saturation and value factor
+			// fpsat is the amount of the new value to apply
+			float fpsat = 1.0 - (float)(y)/(float)(pData->start_of_sky[x]) ;
+			sp.hsv_hat[1] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[1]) ;
+			sp.hsv_hat[2] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[2]) ;
+#endif
+			hsv2rgb16(sp.hsv_hat,sp.rgb_hat) ;
+		    }
+
+		    float fp_zenith = (float)(zenith_end_blend_y-y)/(float)zenith_end_blend_y ;
+		    sp.rgb_hat[0] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[0] + (1.-fp_zenith)*(float)sp.rgb_hat[0]+0.5) ;
+		    sp.rgb_hat[1] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[1] + (1.-fp_zenith)*(float)sp.rgb_hat[1]+0.5) ;
+		    sp.rgb_hat[2] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[2] + (1.-fp_zenith)*(float)sp.rgb_hat[2]+0.5) ;
+		}
+
+#ifdef ADJUST_HSV
+		else {
+
+		    if(y < pData->start_of_sky[x]) {
+			// apply global saturation and value factor
+			float fpsat = 1.0 - (float)(y)/(float)(pData->start_of_sky[x]) ;
+			sp.hsv_hat[1] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[1]) ;
+			sp.hsv_hat[2] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[2]) ;
+			hsv2rgb16(sp.hsv_hat,sp.rgb_hat) ;
+		    }
+		}
+#endif
 
 		if(y >= pData->start_of_sky[x]) {
 
@@ -589,14 +679,31 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	}
     }
 
+    // when doing zenith blending, make end and start of sky constant across
+    // the image so blending looks appropriate
+    if(pData->zenith_blend_depth > 0.) {
+	for(int x = x0 ; x <= x1 ; x++) {
+	    pData->end_of_sky[x] =
+				pData->zenith_blend_end_factor*pData->max_end_of_sky +
+				(1.-pData->zenith_blend_end_factor)*pData->min_end_of_sky ;
+	    pData->start_of_sky[x] = pData->max_start_of_sky ;
+	}
+    }
 
 
     for(int x = x0 ; x <= x1 ; x++) {
 	if(pData->column_mask[x] == 1) continue ;
 
 	int feather_end_y ;
-	int feather_length = compute_feather_length(x, &feather_end_y, depth_of_fill, feather_factor, extra_feather_length, pData) ;
+	int feather_length ;
+	int zenith_end_blend_y ;
+	feather_length = compute_feather_length(x, &feather_end_y, depth_of_fill, feather_factor, extra_feather_length, pData) ;
 
+	if(pData->zenith_blend_depth > 0.) {
+	    zenith_end_blend_y = (int)((float)feather_end_y * pData->zenith_blend_depth + 0.5) ;
+	} else {
+	    zenith_end_blend_y = -1 ;
+	}
 
 	for(int y = 0 ; y < feather_end_y ; y++) {
 	    uint16_t a = ((uint16_t *)(image[y]))[IMAGE_NSAMPLES*x+3] ;
@@ -620,9 +727,12 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    float hsv_hat[3] ;
 	    predict_sky_hsv(px, py, hsv_hat) ;
 
-	    if(y < pData->start_of_sky[x]) {
+	    if(y < pData->start_of_sky[x])
+	    {
+		// apply global adjustments only for saturation and value (hue adjustments will get strange)
 		float fpsat = 1.0 - (float)(y)/(float)(pData->start_of_sky[x]) ;
-		hsv_hat[1] *= 1.0 - fpsat*(1.-pData->final_saturation_factor) ;
+		hsv_hat[1] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[1]) ;
+		hsv_hat[2] *= 1.0 - fpsat*(1.-pData->final_hsv_factor[2]) ;
 	    }
 #define noDEBUG_COL 997
 #ifdef DEBUG_COL
@@ -655,7 +765,17 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    if(hsv_hat[1] < 0.f) hsv_hat[1]=0.f ;
 	    if(hsv_hat[1] > 1.f) hsv_hat[1]=1.f ;
 
+
+
 	    hsv2rgb16(hsv_hat,rgb_hat) ;
+
+	    if(y <= zenith_end_blend_y) {
+		// feather in constant rgb for zenith
+		float fp_zenith = (float)(zenith_end_blend_y-y)/(float)zenith_end_blend_y ;
+		rgb_hat[0] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[0] + (1.-fp_zenith)*(float)rgb_hat[0]+0.5) ;
+		rgb_hat[1] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[1] + (1.-fp_zenith)*(float)rgb_hat[1]+0.5) ;
+		rgb_hat[2] = (uint16_t)(fp_zenith*(float)zenith_rgb_hat[2] + (1.-fp_zenith)*(float)rgb_hat[2]+0.5) ;
+	    }
 
 /*  	    if(x == 100) {  */
 /*  		fprintf(stderr, "x:%d y:%d fp_hat:%f fp_act:%f\n", x, y, fp0, fp1) ;  */
@@ -664,7 +784,9 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	    rgb[0] = (uint16_t)(fp0*(float)rgb_hat[0] + fp1*(float)rgb[0]+0.5) ;
 	    rgb[1] = (uint16_t)(fp0*(float)rgb_hat[1] + fp1*(float)rgb[1]+0.5) ;
 	    rgb[2] = (uint16_t)(fp0*(float)rgb_hat[2] + fp1*(float)rgb[2]+0.5) ;
-	    set4cv_clip_check(image,x,y, rgb,MAX16, pData) ;
+
+
+	    set4cv_clip_check(image,x,y, rgb, MAX16, pData) ;
 	}
 
 	// did end of sky not go far enough?   See if there is an increase in L
@@ -674,7 +796,8 @@ void estimate_sky(int x0,int x1,tdata_t *image,int16_t *start_of_sky,int16_t *en
 	if(feather_end_y >= pData->end_of_sky[x]) {
 	    int yeos ;
 
-	    for(yeos = pData->end_of_sky[x]-2 ; yeos < pData->end_of_sky[x]+2 ; yeos++) {
+	    for(yeos = pData->end_of_sky[x]-2 ; yeos < pData->end_of_sky[x]+2 ; yeos++)
+	    {
 
 		float L_eos0 = get_xy_L(image, x, yeos) ;
 		float L_eos1 = get_xy_L(image, x, yeos+1) ;

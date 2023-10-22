@@ -86,7 +86,9 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
     pData->full_sky_replacement=0 ; // set to 1, will attempt to replace everything down to end of sky, needs df set to 1
     pData->full_sky_replacement_thresh=.9 ; // threhold at which probability of sky pixel causes replacement of pixels
     pData->full_sky_replacement_ramp=200. ;
-    pData->final_saturation_factor=1.0 ;
+    pData->final_hsv_factor[0]=1.0 ;
+    pData->final_hsv_factor[1]=1.0 ;
+    pData->final_hsv_factor[2]=1.0 ;
     pData->reduce_spline_value_range=0.0 ;
     pData->horizon_was_set=0 ;
     pData->sat_prediction_method=1 ;
@@ -173,6 +175,10 @@ void initialize_skyfill_data_struct(SKYFILL_DATA_t *pData)
 
     // 2021, try nonlinear feathering
     pData->nonlinear_feather=1.0 ;
+
+    // if > 0., will cause all colors to eventually be a constant at y==0 (aka the zenith) during final estimate sky coloring
+    pData->zenith_blend_depth=-1.0 ;
+    pData->zenith_blend_end_factor=1.0 ;
 
     // These are the parameters for the CIE sky model
     // for clear blue sky with some haze this will produce
@@ -1010,9 +1016,15 @@ void usage(char *msg, char *msg2)
     fprintf(stderr, "    -r_tos_thresh <thresh> -- sets the tolerance for finding \"outlier\" pixels in a small section of the sky, if the pixel\n") ;
     fprintf(stderr, "                       is more than this fraction away from the mean, it is classified as an outlier.  Default thresh is 0.02\n") ;
     fprintf(stderr, "    -verbose -- adds a little information at the end of the run, really only useful for debuggin\n") ;
-    fprintf(stderr, "    -t -- quick test most, scales the output image by 50%% to speed up processing\n") ;
+    fprintf(stderr, "    -t -- quick test mode, scales the output image by 50%% to speed up processing\n") ;
     fprintf(stderr, "    -EO -- show estimated sky only, will replace the entire image with the optimized estimate of the sky\n") ;
     fprintf(stderr, "    -SR -- show estimated sky only for the sky area to be filled -- it will not have final blending applied\n") ;
+
+    fprintf(stderr, "    -zb <zenith_blend_depth> <zenith_blend_end_factor> -- For zenith blending -- where the top of the image is assumed to be the zenith\n") ;
+    fprintf(stderr, "                       and is forced to have a fixed color. <zenith_blend_depth> controls how far down towards the end of sky to start\n") ;
+    fprintf(stderr, "                       blending the zenith color, <zenith_blend_end_factor> sets the end of sky for the final processing:\n") ;
+    fprintf(stderr, "                       0.0 is the minimum end of sky found by the automated algorithm, 1.0 is the maximum end of sky found\n") ;
+    fprintf(stderr, "                       by the automated algorithm\n") ;
 
 
 
@@ -1186,6 +1198,7 @@ int main(int argc, char* argv[])
     if(argc < 3)
 	usage("Input or output file not specified", "") ;
 
+
     if(! strcmp(argv[1], "-fit") ) {
 	// read previous data from input file, fit the sky model and exit
 	char samplefile[512] ;
@@ -1260,20 +1273,32 @@ int main(int argc, char* argv[])
 		if(s[j] == 'S') { sscanf(&s[j+1], "%d,%d,%d,%d", &l,&r,&t,&b) ; continue ; }
 	    }
 
-	    if(w < 0 || h < 0 || v < 0 || l < 0 || r < 0 || t < 0 || b < 0) {
-		fprintf(stderr, "Malformed pto file?\n") ;
-		exit(1) ;
+	    if(v > 0) {
+
+		if(w > 0 && h > 0 && l < 0 && r < 0 && t < 0 && b < 0) {
+		    // only width and height in PTO file, assume l,r,t,b are max dimension possible
+		    l=0 ;
+		    r=w-1 ;
+		    t=0 ;
+		    b=h-1 ;
+		}
+
+		if(w < 0 || h < 0 || v < 0 || l < 0 || r < 0 || t < 0 || b < 0) {
+		    fprintf(stderr, "Malformed pto file?, ignoring...\n") ;
+		} else {
+		    int vert_fov = ((float)v * ((float)h/(float)w)+0.5) ;
+		    printf("PTO FOV %d x %d ratio %f\n", v, vert_fov, (float)v/(float)vert_fov) ;
+
+		    int w_actual = r-l ;
+		    int h_actual = b-t ;
+		    pto_fov = (int)((float)v * (float)w_actual / (float)w + 0.5) ;
+		    vert_fov = ((float)pto_fov * ((float)h_actual/(float)w_actual)+0.5) ;
+
+		    printf("From PTO file: image FOV %d x %d ratio %f\n", pto_fov, vert_fov, (float)pto_fov/(float)vert_fov) ;
+		}
+	    } else {
+		    fprintf(stderr, "No field of view value in PTO file.\n") ;
 	    }
-
-	    int vert_fov = ((float)v * ((float)h/(float)w)+0.5) ;
-	    printf("PTO FOV %d x %d ratio %f\n", v, vert_fov, (float)v/(float)vert_fov) ;
-
-	    int w_actual = r-l ;
-	    int h_actual = b-t ;
-	    pto_fov = (int)((float)v * (float)w_actual / (float)w + 0.5) ;
-	    vert_fov = ((float)pto_fov * ((float)h_actual/(float)w_actual)+0.5) ;
-
-	    printf("image FOV %d x %d ratio %f\n", pto_fov, vert_fov, (float)pto_fov/(float)vert_fov) ;
 	}
 
 	fclose(fp) ;
@@ -1505,9 +1530,18 @@ int main(int argc, char* argv[])
 	}
 
 	if(!strcmp(argv[0], "-fs")) {
-	    pData->final_saturation_factor = atof(argv[1]) ;
+	    pData->final_hsv_factor[1] = atof(argv[1]) ;
 	    argc -= 2 ;
 	    argv += 2 ;
+	    continue ;
+	}
+
+	if(!strcmp(argv[0], "-fhsv")) {
+	    pData->final_hsv_factor[0] = atof(argv[1]) ;
+	    pData->final_hsv_factor[1] = atof(argv[2]) ;
+	    pData->final_hsv_factor[2] = atof(argv[3]) ;
+	    argc -= 4 ;
+	    argv += 4 ;
 	    continue ;
 	}
 
@@ -1772,6 +1806,17 @@ int main(int argc, char* argv[])
 	    pData->val_model_full = atoi(argv[1]) ;
 	    argc -= 2 ;
 	    argv += 2 ;
+	    continue ;
+	}
+	if(!strcmp(argv[0], "-zb")) {
+	    pData->zenith_blend_depth = atof(argv[1]) ;
+	    pData->zenith_blend_end_factor = atof(argv[2]) ;
+	    if( pData->zenith_blend_end_factor < 0. || pData->zenith_blend_end_factor > 1.) {
+		fprintf(stderr, "zenith blend end factor must be between 0.0 and 1.0\n") ;
+		exit(1) ;
+	    }
+	    argc -= 3 ;
+	    argv += 3 ;
 	    continue ;
 	}
 

@@ -169,7 +169,7 @@ typedef struct skyfill_data
     int full_sky_replacement ; // set to 1, will attempt to replace everything down to end of sky, needs df set to 1
     float full_sky_replacement_thresh ; // threhold at which probability of sky pixel causes replacement of pixels
     float full_sky_replacement_ramp ; // speed at which probability of sky pixel changes
-    float final_saturation_factor ;
+    float final_hsv_factor[3] ;
     float reduce_spline_value_range ; // in splined mode, reduce value range in spine curve. 0 is original curve, 1 is completely flat
 
 
@@ -266,6 +266,10 @@ typedef struct skyfill_data
 
     // 2021, try nonlinear feathering
     float nonlinear_feather ;
+
+    // if > 0., will cause all colors to eventually be a constant at y==0 (aka the zenith) during final estimate sky coloring
+    float zenith_blend_depth ;
+    float zenith_blend_end_factor ;
 
     // These are the parameters for the CIE sky model
     // for clear blue sky with some haze this will produce
