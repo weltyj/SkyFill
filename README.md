@@ -103,13 +103,14 @@ There are three [tutorials](Tutorial/tutorial_index.md) describing the usage of 
 **Miscellaneous Flags**
 
   * -nceos -- "no clip end of sky".  In full sky replacement mode, will disable feathering for any pixels up to end of sky.  If the sky model is different from the actual sky near the horizon, this may produce a more consistent result
+  * -FOV \<degrees\> -- If you do not have a hugin .pto file, specify the field of view as \<degrees\>
   * -fsrt \<thresh\> \<ramp\> -- Sets the threshold and ramp for probability a pixel is identified as a sky pixel (and will be replaced).  Default thresh is 0.9, default ramp is 200.  Reasonable thresh values are 0.5 to 0.99.  Higher values result in less pixels identified as sky.  ramp changes how fast probability changes around thresh.  ramp of 10 gives a very slow change, while ramp of 200 gives a reasonably fast change.
   * -fsh \<pl\> \<pr\> -- Fix Sky Hue.  If a small area of the sky has been blown out, the hue will be incorrect.  If there is also an area of sky adjacent to the blown out area, a repair can be attempted.  pl, and pr are the left and right markers for the area of the sky to attempt a repair.  They are expressed as a proportion, i.e "-fsh 0.75 1.0" will attempt to repair the right 25% of the image where sky is detected.
   * -msu \<0|1|2\>  -- run a smoothing filter over the sky after all processing is complete.  Recommended mode is "-msu 0", the other modes are experimental.
   * -sd \<S\> -- a factor applied to the estimated sky saturation model, default is 1.0
   * -r_tos_thresh \<thresh\> -- threshold to ignore pixels in very localized areas of the sky for estimating local sky rgb in preliminary steps repairing errant sky pixels.  Default is 0.02.  Reasonable values are 0.01 to 0.05.   The default will be sufficient in most cases.
   * -LF \<filename\> -- add lens flare and aperture ghosts created by specular light (i.e. the sun) defined in *filename*
-  * -fhsv \<fH\> \<fS\> \<fV\>-- Final sky HSV adjustment. Globally applied adjustments to predicted sky HSV.  \<fH\> is added to the hue prediction (hue range 0 to 360).  Saturation prediction is multipled by \<fS\>.  Value predicition is multiplied by \<fV\>.  This flag may be most useful with zenith blending.
+  * -fhsv \<fH\> \<fS\> \<fV\> -- Final sky HSV adjustment. Globally applied adjustments to predicted sky HSV.  \<fH\> is added to the hue prediction (hue range 0 to 360).  Saturation prediction is multipled by \<fS\>.  Value predicition is multiplied by \<fV\>.  This flag may be most useful with zenith blending.
 
 **Zenith Blending**
 * For panorama that include the zenith.  The following flag will cause the color of the image to become constant at the very top of the image.  This may be useful for images that don't have the zenith too.
