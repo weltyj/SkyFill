@@ -72,6 +72,6 @@ It looks marginally better around the sun, but there are some bad rectangles wit
 
 This is much better, and perhaps may be good enough to move ahead with additional editing.  The reason the area above the sun stays bright to the top of the image is because the blending model is attempting to make a smooth transition between the modeled sky and the actual image so it will brighten the modeled sky to match the sun.  A similar problem is on the left side of the image with the clouds at the top of the sky.
 
-The is why **Full Sky Replacement Mode** was developed.  It attempts to recognize pixels that are truly "clear sky", and replace or extend those, and leave other pixels as they are found.
+That is why **Full Sky Replacement Mode** was developed.  It attempts to recognize pixels that are truly "clear sky", and replace or extend those, and leave other pixels as they are found.
 
 Continue on to [Part 2](SkyFill_tutorial_fsr.md) of this tutorial
